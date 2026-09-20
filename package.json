@@ -1,0 +1,32 @@
+{
+  "name": "stemslayer-web",
+  "private": true,
+  "version": "0.1.0",
+  "type": "module",
+  "scripts": {
+    "dev": "vite",
+    "build": "tsc --noEmit && vite build",
+    "lint": "eslint .",
+    "typecheck": "tsc --noEmit",
+    "test": "vitest run --project node --passWithNoTests",
+    "test:browser": "vitest run --project browser"
+  },
+  "dependencies": {
+    "react": "^19.3.0",
+    "react-dom": "^19.3.0"
+  },
+  "devDependencies": {
+    "@eslint/js": "^10.0.0",
+    "@types/node": "latest",
+    "@types/react": "latest",
+    "@types/react-dom": "latest",
+    "@vitest/browser-playwright": "^4.1.11",
+    "eslint": "^10.0.0",
+    "globals": "latest",
+    "@vitejs/plugin-react": "latest",
+    "typescript": "latest",
+    "typescript-eslint": "latest",
+    "vite": "^8.3.0",
+    "vitest": "^4.1.11"
+  }
+}
