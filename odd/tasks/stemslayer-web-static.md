@@ -74,7 +74,9 @@ The desktop app requires downloading a PyInstaller bundle and a Windows machine.
 - 2026-09-20 — T1 partial (user-reported): a ~5 min song separated on freemusicdemixer.com with the 6-stem model in under 4 minutes (about 0.8x real time). User judges this fast enough. Still missing: browser, CPU, whether WebGPU was active, peak memory. T1 stays open until the WebGPU question is answered, since it feeds T3.
 
 ## Go/no-go
-Pending. The user records here whether phase 2 is authorized, and with which chain strategy.
+**Go**, 2026-09-20, by the user, after reviewing `docs/decisions/phase-2-plan.md` and the three accepted risks (scientific-use weights, single-author mirrors, untested WASM fallback of the 6-stem export). Phase 2 starts with spike S2. Chain strategy: to be chosen at the first pull request.
+
+Phase 1 is closed. This document stays as the record; each phase-2 task opens its own feature document under `odd/tasks/`.
 
 ## Next step
-User go/no-go on phase 2 (`docs/decisions/phase-2-plan.md`). Independently of it, the Stitch screens can now be redrawn from the parity table and `docs/decisions/design-reference.md` section 3, since T3 and T5 are closed.
+Phase 2: spike S2 (`docs/decisions/phase-2-plan.md`, P0). In parallel as a design activity: redraw the Stitch screens from the parity table and `docs/decisions/design-reference.md` section 3.
