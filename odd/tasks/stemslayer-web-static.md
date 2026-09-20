@@ -16,6 +16,7 @@ The desktop app requires downloading a PyInstaller bundle and a Windows machine.
 
 ## Product decisions
 - 2026-09-20 — Positioning: instrumental/rock focus (vocals, drums, bass, guitars). The web app ships both desktop profiles: "Basic" (Legacy, htdemucs, 4 stems) and "Rock" (Metal Stereo, htdemucs_6s + deterministic guitar centre/sides split). Rock is the default; Basic is the low-friction option. Profile choice is presented in user language, never by model name. Model weights download lazily per profile on first use and are cached in the browser. Metal Roles stays disabled, as on desktop.
+- 2026-09-20 — Source input accepts one file at a time, as on desktop (extra dropped files are ignored). Decided by the user; closes question 3 of `docs/decisions/feature-parity.md`. Questions 1, 2, 4, 5 and 6 there are technical and get resolved in T5/T6 with the recommended answers: Web Locks for identity claims, `Worker.terminate()` plus a `beforeunload` warning, one `AudioWorklet` mixing all lanes with a shared cursor, `navigator.storage.estimate()` before accepting a job, and a single store keyed by `(source_hash, pipeline_fingerprint)`.
 - Modifying the desktop app. It keeps working as is; the web app is a rewrite that reuses the desktop design and `Tests/Portable` as its specification, not its Python code.
 
 ## Constraints
