@@ -1,1 +1,9 @@
 .atl/
+
+# spike artifacts: model files, reference stems and local virtualenvs are never committed
+spikes/**/models/
+spikes/**/reference/
+spikes/**/.venv/
+spikes/**/node_modules/
+spikes/**/*.wav
+spikes/**/*.onnx
