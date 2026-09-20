@@ -79,4 +79,4 @@ The desktop app requires downloading a PyInstaller bundle and a Windows machine.
 Phase 1 is closed. This document stays as the record; each phase-2 task opens its own feature document under `odd/tasks/`.
 
 ## Next step
-Phase 2: spike S2 (`docs/decisions/phase-2-plan.md`, P0). In parallel as a design activity: redraw the Stitch screens from the parity table and `docs/decisions/design-reference.md` section 3.
+Phase 2 continues with P1 scaffold (`docs/decisions/phase-2-plan.md`). Spike S2 closed with go (`docs/decisions/spike-s2.md`). Stitch screens redrawn 2026-09-20 (`docs/decisions/design-reference.md` section 5).

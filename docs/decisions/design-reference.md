@@ -1,6 +1,6 @@
 # Visual design reference — Stitch "Kanagawa Audio Stem Demixer"
 
-Date: 2026-09-20. Status: adopted (design system), rejected as-is (screens).
+Date: 2026-09-20. Status: adopted (design system); screens redrawn from the parity table the same day (section 5).
 
 Source: Stitch project `projects/16027644409535149502` ("Kanagawa Audio Stem Demixer", working name DragonStems). Read through the Stitch MCP: project design theme, the `DESIGN.md` embedded in it, and the screenshots of the five screens.
 
@@ -55,3 +55,20 @@ The mockup pass in Stitch is scheduled after these close, so the screens show re
 - **T5** decides the accepted file ceiling shown on the drop zone, the storage-quota readout in the sidebar, and the eviction warning copy.
 
 Everything else in section 3 is already decided and can be redrawn at that time in one pass: profile cards, mixer controls, export checklist, single-file drop zone, English copy.
+
+## 5. Redrawn screens (2026-09-20)
+
+After T3, T5 and spike S2 closed, the four desktop screens were regenerated in the same Stitch project with `edit_screens`, one prompt per screen, from the parity table and section 3 of this note. The originals stay in the project; the new screens are the design reference for phase-2 tasks P8–P11.
+
+| Screen | Stitch screen id | What it fixes |
+|---|---|---|
+| Upload - Stemslayer | `1d2398e695504d59be8edca762a85bcd` | Two profile cards (Basic 4 stems, Rock 6 stems, Rock default) instead of the 2/4/6 selector; single-file drop zone with the ~15-minute soft ceiling; "Before you start" strip with real values (engine WebGPU/WASM, ~25 s estimate for a 4-minute song from S2, storage quota, model cache 166 MiB / 272 MiB); browser-storage meter in the sidebar; transport reduced to play/pause, loop, ±10 s, time, master gain. |
+| Library - Stemslayer | `45c441aa237c4c448a7fa020c5320400` | Search plus the three sorts only; one row per status (ready, processing with window progress, preparing with model download, failed, interrupted, unavailable) using the desktop copy; cancel confirm dialog; no BPM/key, no favourites. |
+| Mixer - Stemslayer | `aa00df09b401411f98b1b1b6f401cf61` | Six lanes with colour ribbon, waveform, M/S pills and a gain fader in dB; playhead and A/B loop region; transport with ±10 s and keyboard hints; no pan, EQ, punch, key or tempo. |
+| Export - Stemslayer | `2a5990409e2c4d3cacdadb478c183682` | WAV-only checklist with per-stem size, ZIP or selected download, "What you get" card, browser-storage notice (Safari seven-day rule, eviction); no MP3/AAC, LUFS, click, MIDI or cloud targets. |
+
+Common changes: product name Stemslayer, English copy, header reduced to a WebGPU pill and the avatar, sidebar Upload / Library / Mixer / Export with the storage meter, no fake DAW telemetry anywhere.
+
+Lane colours settled for the Rock profile: guitar centre gold `#c8b38d`, guitar sides light gold `#d6c5a0`, other muted olive `#9fa685` (closes the open item in section 1).
+
+Not redrawn: the mobile screens the user generated in Stitch in parallel still carry the old Spanish copy and the DragonStems features; mobile is out of scope for phase 2 (desktop-first, per `architecture.md`).
