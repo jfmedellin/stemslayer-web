@@ -17,6 +17,7 @@ The desktop app requires downloading a PyInstaller bundle and a Windows machine.
 ## Product decisions
 - 2026-09-20 — Positioning: instrumental/rock focus (vocals, drums, bass, guitars). The web app ships both desktop profiles: "Basic" (Legacy, htdemucs, 4 stems) and "Rock" (Metal Stereo, htdemucs_6s + deterministic guitar centre/sides split). Rock is the default; Basic is the low-friction option. Profile choice is presented in user language, never by model name. Model weights download lazily per profile on first use and are cached in the browser. Metal Roles stays disabled, as on desktop.
 - 2026-09-20 — Source input accepts one file at a time, as on desktop (extra dropped files are ignored). Decided by the user; closes question 3 of `docs/decisions/feature-parity.md`. Questions 1, 2, 4, 5 and 6 there are technical and get resolved in T5/T6 with the recommended answers: Web Locks for identity claims, `Worker.terminate()` plus a `beforeunload` warning, one `AudioWorklet` mixing all lanes with a shared cursor, `navigator.storage.estimate()` before accepting a job, and a single store keyed by `(source_hash, pipeline_fingerprint)`.
+- 2026-09-20 — Visual design: the Stitch project "Kanagawa Audio Stem Demixer" (`projects/16027644409535149502`) supplies the design system (Dragon Atelier: warm dark surfaces, moss/gold/rust accents, Geist + JetBrains Mono, 4px radii, tonal elevation). Its screens are not the interaction reference: they carry a 2/4/6-stem selector, fake DAW telemetry, extra mixer and export features and cloud targets that contradict the decisions above. Screens get rebuilt from the parity table after T3 and T5 close. Recorded in `docs/decisions/design-reference.md`.
 - Modifying the desktop app. It keeps working as is; the web app is a rewrite that reuses the desktop design and `Tests/Portable` as its specification, not its Python code.
 
 ## Constraints
@@ -52,7 +53,8 @@ The desktop app requires downloading a PyInstaller bundle and a Windows machine.
 
 ## Progress / evidence
 - 2026-09-19 — feature document created in the desktop repository, then moved here when `stemslayer-web` was created. Separate-repository decision recorded in T6.
+- 2026-09-20 — Design reference reviewed and recorded (`docs/decisions/design-reference.md`): design system adopted, screens rejected as-is, seven deviations listed, two elements parked on T3/T5.
 - 2026-09-20 — T1 partial (user-reported): a ~5 min song separated on freemusicdemixer.com with the 6-stem model in under 4 minutes (about 0.8x real time). User judges this fast enough. Still missing: browser, CPU, whether WebGPU was active, peak memory. T1 stays open until the WebGPU question is answered, since it feeds T3.
 
 ## Next step
-Resolve the six open questions in `docs/decisions/feature-parity.md` section 3, then run T2/T3/T5 (research and design notes) and the web design mockups derived from the parity table.
+Resolve the six open questions in `docs/decisions/feature-parity.md` section 3, then run T2/T3/T5 (research and design notes). After T3 and T5 close, redraw the Stitch screens from the parity table and `docs/decisions/design-reference.md` section 3.
