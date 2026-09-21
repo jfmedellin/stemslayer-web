@@ -38,7 +38,7 @@ Define the application layer's ports with in-memory fakes and implement the thre
 
 - [x] **P3A-01 — Ports and fakes.** Route: delegated writer. Checks: every port has a doc comment naming the adapter task that implements it; fakes have their own focused tests for the behaviours the use cases rely on (lock serialisation order, hash determinism, quota arithmetic).
 - [x] **P3A-02 — `addToLibrary`.** Route: same writer. Checks: the six translated desktop scenarios above pass; quota refusal leaves the catalog untouched; the concurrent test proves one claim.
-- [ ] **P3A-03 — `removeTrack` and `retryTrack`.** Route: same writer. Checks: refusal while running; stem-store failure lands on `unavailable`; retry statuses and `errorDetail` clearing; unknown id.
+- [x] **P3A-03 — `removeTrack` and `retryTrack`.** Route: same writer. Checks: refusal while running; stem-store failure lands on `unavailable`; retry statuses and `errorDetail` clearing; unknown id.
 - [ ] **P3A-04 — Close the feature.** Route: inline. Checks: all five commands green; this document carries the evidence; PR opened stacked on #6.
 
 ## Acceptance criteria
@@ -61,6 +61,15 @@ Define the application layer's ports with in-memory fakes and implement the thre
   - RED (all failed on `Cannot find module '../../src/application/add-to-library'`, 0 ran): `claims a new identity and creates a preparing track`, `reuses an existing ready track for identical bytes and profile`, `same bytes with a different profile are independent (not a duplicate)`, `changed bytes create a new track instead of reusing the old identity`, `re-adding the same bytes after a failure adopts and retries the existing identity`, `changed bytes leave a stale failed identity untouched and independent`, `a preparing/processing owner is awaited without creating anything new`, `quota refusal happens before any catalog write`, `quota forecast adds the model footprint only when uncached`, `concurrent identical adds under the same lock claim exactly once`.
   - First implementation pass also failed typecheck (`Object.freeze(...) as const` is invalid on a call expression, TS1355) and one test used `ModelStorePort.setFootprint` which only the fake exposes, not the port — both fixed before GREEN.
   - GREEN: `npm test` → 12 test files passed, 128 tests passed (118 previous + 10 new). `npm run typecheck` and `npm run lint` both clean.
+  - Commit `b823cc0` — `feat(application): add the addToLibrary use case`.
+- 2026-09-21 — **P3A-03 done.** `removeTrack` in `src/application/remove-track.ts`, `retryTrack` in `src/application/retry-track.ts`.
+  - RED (all failed on `Cannot find module`, 0 ran): `removeTrack > returns not-found for an unknown track`, `removeTrack > refuses removal while preparing`, `removeTrack > refuses removal while processing`, `removeTrack > deletes the stem set then the catalog row while ready/failed/interrupted/unavailable` (×4), `removeTrack > a stem-store failure marks the track unavailable instead of deleting the row`, `removeTrack > a repeated stem-store failure on an already-unavailable track keeps its status`, `retryTrack > returns false for an unknown track`, `retryTrack > moves a failed/interrupted/unavailable track back to preparing and clears errorDetail` (×3), `retryTrack > refuses to retry while preparing/processing/ready` (×3).
+  - GREEN on first implementation pass: `npm test` → 14 test files passed, 144 tests passed (128 previous + 16 new). `npm run typecheck`, `npm run lint` clean.
+  - Full verification run for the feature: `npm run typecheck` clean; `npm run lint` clean; `npm test` → 144/144; `npm run test:browser` → 1/1 (pre-existing architecture boundary test, unaffected by this feature since no `infrastructure`/`ui` code was touched); `npm run build` → `tsc --noEmit && vite build` succeeded.
+
+## Feature closed
+
+All three tasks (P3A-01, P3A-02, P3A-03) are done, each in its own commit with tests and this tracker updated. Eight ports declared (`CatalogPort`, `StemStorePort`, `ModelStorePort`, `InferencePort`, `AudioEnginePort`, `QuotaPort`, `LockPort`, plus the existing `HashPort`), six fakes under `tests/fakes/`, and three use cases (`addToLibrary`, `removeTrack`, `retryTrack`) with 42 new tests (16 fakes + 10 addToLibrary + 16 remove/retry). No domain module was modified. P3A-04 (closing the branch/PR) is inline work for the parent orchestrator, not this writer.
 
 ## Next step
 
