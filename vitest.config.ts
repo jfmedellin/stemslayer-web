@@ -16,7 +16,7 @@ export default defineConfig({
         plugins: [react()],
         test: {
           name: 'browser',
-          include: ['src/{infrastructure,ui}/**/*.browser.test.tsx'],
+          include: ['src/{infrastructure,ui}/**/*.browser.test.{ts,tsx}'],
           browser: {
             enabled: true,
             provider: playwright(),

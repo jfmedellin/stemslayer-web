@@ -34,7 +34,7 @@ Every use case from P3 runs against fakes. The catalog is where the desktop's pe
 
 ## Tasks
 
-- [ ] **P4-01 — Web Crypto `HashPort` and Web Locks `LockPort`.** Route: delegated writer. Checks: known SHA-256 vectors; lock serialisation and release-on-rejection in the browser; unsupported-environment error.
+- [x] **P4-01 — Web Crypto `HashPort` and Web Locks `LockPort`.** Route: delegated writer. Checks: known SHA-256 vectors; lock serialisation and release-on-rejection in the browser; unsupported-environment error.
 - [ ] **P4-02 — IndexedDB `CatalogPort`.** Route: same writer. Checks: schema, ordering, duplicate key, identity collision, update/remove, frozen round trip, cross-instance visibility; databases cleaned up per test.
 - [ ] **P4-03 — End-to-end wiring test.** Route: same writer. Checks: real catalog + lock + hash through `addToLibrary`; two racing adds claim once.
 - [ ] **P4-04 — Close the feature.** Route: inline. Checks: five commands green; evidence here; PR(s) opened stacked on #14.
@@ -49,6 +49,14 @@ Every use case from P3 runs against fakes. The catalog is where the desktop's pe
 
 - 2026-09-21 — branch and document created. Forecast ≈420 authored lines (adapters ~170, browser tests ~250).
 
+- 2026-09-21 — **P4-01 done.** `WebCryptoHash` in `src/infrastructure/web-crypto/web-crypto-hash.ts`; `WebLocksLock` and `UnsupportedLockEnvironmentError` in `src/infrastructure/web-locks/web-locks-lock.ts`.
+  - Technical shape decision (recorded per the brief): widened `vitest.config.ts`'s browser project `include` from `src/{infrastructure,ui}/**/*.browser.test.tsx` to `src/{infrastructure,ui}/**/*.browser.test.{ts,tsx}`, so adapter tests with no JSX can use plain `.browser.test.ts`; the `ui` project keeps `.tsx` for its React tests.
+  - `WebLocksLock` reads `navigator.locks` at construction (or an injected `LockManager` for tests), throwing `UnsupportedLockEnvironmentError` when neither is present; `withLock` wraps `navigator.locks.request(key, { mode: 'exclusive' }, callback)`, which already releases on a rejecting callback per the Locks API spec.
+  - RED (`Failed to resolve import`, 0 ran, module did not exist): `hashes the known SHA-256 vector for "abc"`, `hashes the known SHA-256 vector for empty input`; then `serializes two callbacks racing for the same key`, `releases the lock after a rejecting callback so the next caller still runs`, `throws a typed error when the Locks API is unavailable`.
+  - One test-only flake fixed before GREEN: the racing-callbacks test first used an arbitrary `setTimeout(10)` to let the first callback start, which failed once (`expected [] to deeply equal ['first-start']`) — replaced with a deterministic "first callback is running" signal promise; stable across two full `npm run test:browser` runs afterward.
+  - GREEN: `npm run test:browser` → 3 files, 6 tests, run twice for stability. `npm test` → 18 files, 175 tests (unchanged, no Node-project adapter imports). `npm run typecheck`, `npm run lint` both clean.
+  - Commit `<pending>` — `feat(infrastructure): add Web Crypto hash and Web Locks lock adapters`.
+
 ## Next step
 
-P4-01 by a delegated writer with the strict-TDD contract above.
+P4-02 (IndexedDB `CatalogPort`) by the same writer.
