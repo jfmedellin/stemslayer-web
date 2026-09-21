@@ -66,8 +66,12 @@ export interface CacheApiModelStoreOptions {
   readonly fetcher?: typeof fetch
 }
 
+function cachePrefixForProfile(profileId: string): string {
+  return `${CACHE_PREFIX}${encodeURIComponent(profileId)}@`
+}
+
 export function cacheNameForModel(entry: PinnedModelManifestEntry): string {
-  return `${CACHE_PREFIX}${encodeURIComponent(entry.profileId)}-${entry.revision}`
+  return `${cachePrefixForProfile(entry.profileId)}${entry.revision}`
 }
 
 function toArrayBuffer(bytes: Uint8Array): ArrayBuffer {
@@ -125,6 +129,7 @@ export class CacheApiModelStore implements ModelStorePort {
     if (cached !== undefined) {
       try {
         await this.verify(entry, new Uint8Array(await cached.arrayBuffer()))
+        await this.removeObsoleteRevisions(entry)
         return
       } catch (error) {
         await cache.delete(entry.url)
@@ -148,6 +153,7 @@ export class CacheApiModelStore implements ModelStorePort {
       await cache.delete(entry.url)
       throw error
     }
+    await this.removeObsoleteRevisions(entry)
   }
 
   private resolve(profileId: string): PinnedModelManifestEntry {
@@ -196,5 +202,13 @@ export class CacheApiModelStore implements ModelStorePort {
     if (digest !== entry.sha256) {
       throw new ModelDigestMismatchError(entry.profileId, entry.sha256, digest)
     }
+  }
+
+  private async removeObsoleteRevisions(entry: PinnedModelManifestEntry): Promise<void> {
+    const current = cacheNameForModel(entry)
+    const profilePrefix = cachePrefixForProfile(entry.profileId)
+    const obsolete = (await this.cacheStorage.keys())
+      .filter((name) => name.startsWith(profilePrefix) && name !== current)
+    await Promise.all(obsolete.map((name) => this.cacheStorage.delete(name)))
   }
 }

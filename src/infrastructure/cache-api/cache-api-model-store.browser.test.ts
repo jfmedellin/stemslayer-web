@@ -1,6 +1,7 @@
 import { afterEach, describe, expect, test, vi } from 'vitest'
 import {
   CacheApiModelStore,
+  ModelCacheWriteError,
   ModelDigestMismatchError,
   ModelDownloadError,
   ModelSizeMismatchError,
@@ -24,6 +25,23 @@ const entry: PinnedModelManifestEntry = Object.freeze({
   sha256: ABC_SHA256,
 })
 const manifest: PinnedModelManifest = Object.freeze({ [entry.profileId]: entry })
+
+const previousEntry: PinnedModelManifestEntry = Object.freeze({
+  ...entry,
+  revision: 'previous-revision',
+  url: 'https://models.example/previous-revision/model.onnx',
+})
+const revisedEntry: PinnedModelManifestEntry = Object.freeze({
+  ...entry,
+  revision: 'revised-revision',
+  url: 'https://models.example/revised-revision/model.onnx',
+  sha256: 'cb8379ac2098aa165029e3938a51da0bcecfc008fd6795f401178647f96c5b34',
+})
+const revisedManifest: PinnedModelManifest = Object.freeze({ [entry.profileId]: revisedEntry })
+
+const seed = async (model: PinnedModelManifestEntry, bytes = new Uint8Array([97, 98, 99])) => {
+  await (await caches.open(cacheNameForModel(model))).put(model.url, new Response(bytes))
+}
 
 const responseWithChunks = (...chunks: readonly Uint8Array[]): Response => new Response(
   new ReadableStream<Uint8Array>({
@@ -155,5 +173,71 @@ describe('CacheApiModelStore', () => {
 
     await expect(store.ensure(entry.profileId, vi.fn())).rejects.toBeInstanceOf(ModelDigestMismatchError)
     expect(await (await caches.open(cacheNameForModel(wrongDigestEntry))).match(entry.url)).toBeUndefined()
+  })
+
+  test.each([
+    ['download', () => vi.fn<typeof fetch>(async () => { throw new Error('offline') }), ModelDownloadError],
+    ['size', () => fetchReturning(responseWithChunks(new Uint8Array([100, 101]))), ModelSizeMismatchError],
+    ['digest', () => fetchReturning(responseWithChunks(new Uint8Array([97, 98, 99]))), ModelDigestMismatchError],
+  ])('preserves the previous verified revision when the replacement has a %s failure', async (
+    _failure,
+    createFetcher,
+    ErrorType,
+  ) => {
+    await seed(previousEntry)
+    const store = new CacheApiModelStore({
+      manifest: revisedManifest,
+      cacheStorage: caches,
+      fetcher: createFetcher(),
+    })
+
+    await expect(store.ensure(entry.profileId, vi.fn())).rejects.toBeInstanceOf(ErrorType)
+    expect(await (await caches.open(cacheNameForModel(previousEntry))).match(previousEntry.url)).toBeDefined()
+  })
+
+  test('preserves the previous verified revision when replacement cache writing fails', async () => {
+    await seed(previousEntry)
+    const revisedCacheName = cacheNameForModel(revisedEntry)
+    const failingStorage = new Proxy(caches, {
+      get(target, property, receiver) {
+        if (property !== 'open') return Reflect.get(target, property, receiver)
+        return async (name: string) => {
+          const cache = await target.open(name)
+          if (name !== revisedCacheName) return cache
+          return new Proxy(cache, {
+            get(cacheTarget, cacheProperty, cacheReceiver) {
+              if (cacheProperty === 'put') return async () => { throw new Error('quota exceeded') }
+              const value = Reflect.get(cacheTarget, cacheProperty, cacheReceiver) as unknown
+              return typeof value === 'function' ? value.bind(cacheTarget) : value
+            },
+          })
+        }
+      },
+    })
+    const store = new CacheApiModelStore({
+      manifest: revisedManifest,
+      cacheStorage: failingStorage,
+      fetcher: fetchReturning(responseWithChunks(new Uint8Array([100, 101, 102]))),
+    })
+
+    await expect(store.ensure(entry.profileId, vi.fn())).rejects.toBeInstanceOf(ModelCacheWriteError)
+    expect(await (await caches.open(cacheNameForModel(previousEntry))).match(previousEntry.url)).toBeDefined()
+  })
+
+  test('activates a verified replacement then removes only obsolete revisions for its profile', async () => {
+    const otherProfile = Object.freeze({ ...previousEntry, profileId: 'other-profile' })
+    await seed(previousEntry)
+    await seed(otherProfile)
+    const store = new CacheApiModelStore({
+      manifest: revisedManifest,
+      cacheStorage: caches,
+      fetcher: fetchReturning(responseWithChunks(new Uint8Array([100, 101, 102]))),
+    })
+
+    await store.ensure(entry.profileId, vi.fn())
+
+    expect(await caches.has(cacheNameForModel(revisedEntry))).toBe(true)
+    expect(await caches.has(cacheNameForModel(previousEntry))).toBe(false)
+    expect(await caches.has(cacheNameForModel(otherProfile))).toBe(true)
   })
 })
