@@ -1,6 +1,6 @@
 # P7a — Windowing and Basic spectral processing
 
-Status: P7A-01 reviewed; overlap-proof follow-up pending before spectral work. Delivery strategy: `ask-on-risk`; chain strategy: `feature-branch-chain`.
+Status: complete. All tasks closed; native review acknowledged P7A-01/P7A-01F, could not admit P7A-02A+B (native context budget). Delivery strategy: `ask-on-risk`; chain strategy: `feature-branch-chain`.
 
 ## Objective
 
@@ -63,7 +63,7 @@ The ONNX Worker cannot safely execute either model until input windows, overlap 
   - GREEN/REFACTOR: Basic-only spectral adapters over P7A-02A; no Worker/ONNX behavior.
   - Tolerance: round-trip and golden maximum error `<= 1e-6`.
   - Rollback: `stft.ts`, its focused tests, and P7A-02B tracker evidence; windowing and FFT remain.
-- [ ] **P7A-03 — Close P7a.**
+- [x] **P7A-03 — Close P7a.**
   - Route: parent-owned commits, assessments, final checks, and Engram mirror update.
   - Evidence: strict-TDD history, exact checks, authored counts, rollback boundaries, commit identities, and native outcomes.
 
@@ -75,8 +75,8 @@ The ONNX Worker cannot safely execute either model until input windows, overlap 
 - [x] Full triangular weighting and accumulated normalization match S2 behavior.
 - [x] FFT and STFT/iSTFT round trips satisfy `<= 1e-6`. (FFT/iFFT closed by P7A-02A; centered/normalized STFT/iSTFT round trip and golden bins closed by P7A-02B.)
 - [x] Basic CAC layout, Nyquist behavior, Demucs padding, and branch reconstruction match S2 evidence.
-- [ ] Rock remains waveform-only and does not depend on Basic spectral code.
-- [ ] Focused and full checks pass with observed strict-TDD evidence.
+- [x] Rock remains waveform-only and does not depend on Basic spectral code.
+- [x] Focused and full checks pass with observed strict-TDD evidence.
 
 ## Forecast and delivery
 
@@ -127,6 +127,12 @@ feat/p7-integration
 - 2026-09-21 — P7A-02B rollback boundary: remove `src/infrastructure/onnx-worker/stft.ts`, `tests/infrastructure/onnx-worker/stft.test.ts`, `tests/infrastructure/onnx-worker/fixtures/stft-golden.json`, `tests/infrastructure/onnx-worker/fixtures/demucs-spec-golden.json`, and this P7A-02B tracker evidence; windowing and FFT (P7A-01/P7A-01F/P7A-02A) remain intact.
 - 2026-09-21 — P7A-02B source/test commit `12f6978` (`feat(inference): add Basic STFT and CAC processing`) contains 574 authored lines across `src/infrastructure/onnx-worker/stft.ts` (326) and `tests/infrastructure/onnx-worker/stft.test.ts` (248), plus two golden-fixture JSON data files (not authored logic).
 
+- 2026-09-21 — P7A-03 closure. Isolation check: `grep` confirms `windowing.ts` imports nothing from `stft.ts`/`fft.ts`, and no module outside `src/infrastructure/onnx-worker/` references either — the last unchecked acceptance criterion ("Rock remains waveform-only") is satisfied by construction, since Rock's future Worker code (P7b) has nothing in this phase to depend on.
+- 2026-09-21 — P7A-03 native review assessment: `gentle-ai review assess --base-ref 1f8b084 --committed-only` on the full P7A-02A+02B range (7 files, 925 lines) returned `review_due: true, review_due_reason: slice_budget_reached`. User granted consent; `review start` failed `lens_context_budget_exceeded` (native reviewer lens could not ingest the candidate). Split into P7A-02A alone (336 lines): `review_due: false, review_due_reason: under_budget` — no review forced, stays pending. Split into P7A-02B alone (593 lines, 5 files): `review_due: true`; user granted consent again for this distinct target; `review start` failed the same `lens_context_budget_exceeded`. Root cause isolated: `tests/infrastructure/onnx-worker/fixtures/{demucs-spec-golden,stft-golden}.json` are single-line minified JSON carrying 398 KB and 159 KB of golden numeric data — `wc -l` reports them as 1 line each so they are nearly invisible to the line-count heuristic, but the native lens ingests full file content and exceeds its context budget on both attempted boundaries. Per the review contract's own continuation table, `lens_context_budget_exceeded` is terminal (reduce scope and start a new transaction, or disable); reducing further would require rewriting the already-acknowledged commit history, which is out of proportion to a review-quota workaround. Stopped retrying. This is a native-tooling limitation, not a defect in the candidate; review is informational and never gates delivery, so P7a closes on the manual verification below. Recorded as a follow-up for later work: keep large golden fixtures out of a reviewed diff (e.g. `.gitattributes` marking them as generated/vendored, or a separate non-reviewed data commit) if native review needs to reach this code again.
+- 2026-09-21 — P7A-03 final verification, parent-run: `npm run typecheck` clean; `npm run lint` clean; `npm test` → 22 files / 237 tests; `npm run test:browser` → 9 files / 48 tests; `npm run build` succeeded; whitespace/`git diff --check` clean.
+- 2026-09-21 — P7A-03 commit identities across the whole feature: `25067de` (P7A-01 source/test, 304 lines), `968d58f` (P7A-01 tracker), `2f9be45` (P7A-01F test, part of a 64-line reviewed candidate), `1f8b084` (P7A-01F tracker), `fa06725` (P7A-02A source/test, 323 lines), `86522c3` (P7A-02A tracker), `12f6978` (P7A-02B source/test/fixtures, 574 lines), `2a8931c` (P7A-02B tracker). Native outcomes: P7A-01 approved and acknowledged (lineage `review-fc873875ea898c02`, advisory `R3-001`); P7A-01F approved and acknowledged with no blocking findings (lineage `review-2cdebb57baa42b53`, three non-blocking advisories on the proof test's own robustness — order-dependence, a hardcoded overlap index, partial sample coverage — recorded as later work, never reopening this candidate); P7A-02A never reached review_due (under budget, stays pending); P7A-02B could not be admitted for native review (context budget), verified manually instead.
+- 2026-09-21 — Rollback boundaries, cumulative: removing any of `windowing.ts`, `fft.ts`, or `stft.ts` (with their focused tests and fixtures) removes exactly that layer and everything built on top of it in this list; removing `stft.ts` alone leaves `windowing.ts`/`fft.ts` and the Rock-only path fully intact, matching the acceptance criterion just closed.
+
 ## Next step
 
-Assess the P7A-02A and P7A-02B candidates under the user-owned RDD switch (native review remains opt-in and was not invoked by this writer), then execute P7A-03 (parent-owned close: final commits, assessments, and Engram mirror update).
+P7a is closed. Continuing work moves to P7b (ONNX Runtime Web session, Worker protocol, provider selection, cancellation) on top of this branch, or to publishing this phase's pull requests against the existing chain (`main` → … → P6 → P7-integration → P7a), a separate user-owned decision.
