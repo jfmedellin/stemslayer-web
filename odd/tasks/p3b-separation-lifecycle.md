@@ -38,7 +38,8 @@ The library use cases (P3a) create `preparing` rows; nothing yet moves them to `
 - [x] **P3B-02 — `separate` and all-or-nothing publish.** Route: same writer. Checks: success path with progress events; failure leaves no referenced partial stems; cancellation lands on `interrupted`; a non-`preparing` row is refused.
 - [x] **P3B-03 — `SeparationQueue` and `cancel`.** Route: same writer. Checks: one running job at a time, FIFO; queued cancel never runs the job; running cancel terminates; unknown returns `false`; retry after cancel works (P3a `retryTrack`).
 - [x] **P3B-04 — `runStartupSweeps`.** Route: same writer. Checks: the three sweeps in order with the desktop copy and counts; idempotent on a clean catalog.
-- [ ] **P3B-05 — Close the feature.** Route: inline. Checks: five commands green; evidence here; PR(s) opened stacked on #10.
+- [x] **P3B-05 — Close the feature.** Route: inline. Checks: five commands green; evidence here; PR(s) opened stacked on #10.
+  - Done 2026-09-21: parent re-ran `npm run typecheck`, `npm run lint`, `npm test` three times (175/175 each, no flakiness in the queue tests), `npm run test:browser` (1/1), `npm run build`; all green. Spot-read of `separate.ts`: partial stems deleted before any status change, desktop copy on `interrupted`, `ready` only after publish. Authored diff 1,170 lines, delivered as two stacked PRs: #13 `feat/p3b-separate` (commits `7f3823e`, `96ed0c7`, 684 lines, issue #11) on top of #10, and the queue/sweeps PR (`2b780f0`, `7bb19cc`, 486 lines, issue #12) on top of #13.
 
 ## Acceptance criteria
 
