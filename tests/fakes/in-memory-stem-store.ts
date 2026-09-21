@@ -12,6 +12,14 @@ export class InMemoryStemStore implements StemStorePort {
     this.keys.delete(resultKey)
   }
 
+  async exists(resultKey: string): Promise<boolean> {
+    return this.keys.has(resultKey)
+  }
+
+  async listResultKeys(): Promise<readonly string[]> {
+    return [...this.keys]
+  }
+
   seed(resultKey: string): void {
     this.keys.add(resultKey)
   }
