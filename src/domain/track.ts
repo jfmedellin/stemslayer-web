@@ -65,6 +65,12 @@ const mutableMetadata = new Set<keyof TrackMetadataPatch>([
   'errorDetail',
 ])
 
+const retryRebindStatuses = new Set<TrackStatus>([
+  'failed',
+  'interrupted',
+  'unavailable',
+])
+
 const reject = (code: string): never => {
   throw new TrackDomainError(code)
 }
@@ -90,6 +96,14 @@ export function createTrack(input: TrackInput): Track {
 export function assignTrackSourceHash(track: Track, sourceHash: string): Track {
   if (track.sourceHash === sourceHash) return track
   if (track.sourceHash !== undefined) reject('track.identity_immutable')
+  return Object.freeze({ ...track, sourceHash })
+}
+
+export function rebindTrackSourceHashForRetry(track: Track, sourceHash: string): Track {
+  if (!retryRebindStatuses.has(track.status)) {
+    reject('track.retry_rebind_invalid_status')
+  }
+  if (track.sourceHash === sourceHash) return track
   return Object.freeze({ ...track, sourceHash })
 }
 

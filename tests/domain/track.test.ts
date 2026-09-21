@@ -5,6 +5,7 @@ import {
   TrackDomainError,
   assignTrackSourceHash,
   createTrack,
+  rebindTrackSourceHashForRetry,
   transitionTrack,
   updateTrackMetadata,
   type Track,
@@ -159,4 +160,29 @@ describe('track metadata and identity', () => {
       expect(ready[field]).toBe(identified[field])
     }
   })
+})
+
+describe('retry source identity rebinding', () => {
+  test.each(['failed', 'interrupted', 'unavailable'] as const)(
+    'allows explicit rebinding from %s',
+    (status) => {
+      const original = assignTrackSourceHash(trackAt(status), 'old-source')
+      const rebound = rebindTrackSourceHashForRetry(original, 'new-source')
+
+      expect(rebound).toEqual({ ...original, sourceHash: 'new-source' })
+      expect(original.sourceHash).toBe('old-source')
+      expect(rebound).not.toBe(original)
+    },
+  )
+
+  test.each(['preparing', 'processing', 'ready'] as const)(
+    'rejects explicit rebinding from %s',
+    (status) => {
+      const original = assignTrackSourceHash(trackAt(status), 'old-source')
+
+      expect(() => rebindTrackSourceHashForRetry(original, 'new-source')).toThrowError(
+        expect.objectContaining({ code: 'track.retry_rebind_invalid_status' }),
+      )
+    },
+  )
 })

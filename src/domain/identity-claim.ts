@@ -5,6 +5,20 @@ export interface TrackIdentity {
   readonly pipelineFingerprint: string
 }
 
+export type IdentityClaimDecision =
+  | Readonly<{ kind: 'claim-candidate'; trackId: string }>
+  | Readonly<{
+      kind: 'reuse-ready' | 'await-owner' | 'adopt-and-retry'
+      ownerTrackId: string
+    }>
+
+export class IdentityClaimError extends Error {
+  constructor(readonly code: string) {
+    super(code)
+    this.name = 'IdentityClaimError'
+  }
+}
+
 const ownerRank: Readonly<Record<TrackStatus, number>> = {
   ready: 3,
   processing: 2,
@@ -37,8 +51,9 @@ function isPreferred(candidate: Track, current: Track): boolean {
 export function selectPreferredIdentityOwner(
   catalog: readonly Track[],
   candidate: Track,
+  claimedIdentity?: TrackIdentity,
 ): Track | undefined {
-  const identity = identityOf(candidate)
+  const identity = claimedIdentity ?? identityOf(candidate)
   if (identity === undefined) return undefined
 
   let preferred: Track | undefined
@@ -51,4 +66,27 @@ export function selectPreferredIdentityOwner(
     }
   }
   return preferred
+}
+
+export function planIdentityClaim(
+  catalog: readonly Track[],
+  candidateTrackId: string,
+  identity: TrackIdentity,
+): IdentityClaimDecision {
+  const candidate = catalog.find(({ trackId }) => trackId === candidateTrackId)
+  if (candidate === undefined) {
+    throw new IdentityClaimError('identity_claim.candidate_missing')
+  }
+
+  const owner = selectPreferredIdentityOwner(catalog, candidate, identity)
+  if (owner === undefined) {
+    return Object.freeze({ kind: 'claim-candidate', trackId: candidateTrackId })
+  }
+
+  const kind = owner.status === 'ready'
+    ? 'reuse-ready'
+    : owner.status === 'processing' || owner.status === 'preparing'
+      ? 'await-owner'
+      : 'adopt-and-retry'
+  return Object.freeze({ kind, ownerTrackId: owner.trackId })
 }

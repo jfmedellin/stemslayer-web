@@ -1,8 +1,10 @@
 import { describe, expect, test } from 'vitest'
 
 import {
+  IdentityClaimError,
   hasIdentity,
   identityOf,
+  planIdentityClaim,
   selectPreferredIdentityOwner,
   type TrackIdentity,
 } from '../../src/domain/identity-claim'
@@ -143,5 +145,62 @@ describe('preferred identity owner', () => {
     expect(selectPreferredIdentityOwner(catalog, candidate)).toBe(second)
     expect(JSON.stringify(catalog)).toBe(before)
     expect(catalog).toEqual([first, second])
+  })
+})
+
+describe('identity claim planning', () => {
+  const identity: TrackIdentity = {
+    sourceHash: 'source-a',
+    pipelineFingerprint: 'pipeline-a',
+  }
+  const candidate = track('candidate')
+
+  test('rejects a missing candidate deterministically', () => {
+    expect(() => planIdentityClaim([], 'missing', identity)).toThrowError(IdentityClaimError)
+    try {
+      planIdentityClaim([], 'missing', identity)
+    } catch (error) {
+      expect(error).toMatchObject({ code: 'identity_claim.candidate_missing' })
+    }
+  })
+
+  test.each([
+    ['no owner', []],
+    ['different source', [track('source', 'ready', baseInput.createdAtUtc, 'source-b')]],
+    ['different pipeline', [track('pipeline', 'ready', baseInput.createdAtUtc, 'source-a', 'pipeline-b')]],
+  ] as const)('plans claim-candidate for %s', (_reason, competitors) => {
+    expect(planIdentityClaim([candidate, ...competitors], candidate.trackId, identity)).toEqual({
+      kind: 'claim-candidate',
+      trackId: candidate.trackId,
+    })
+  })
+
+  test.each([
+    ['ready', 'reuse-ready'],
+    ['processing', 'await-owner'],
+    ['preparing', 'await-owner'],
+    ['failed', 'adopt-and-retry'],
+    ['interrupted', 'adopt-and-retry'],
+    ['unavailable', 'adopt-and-retry'],
+  ] as const satisfies ReadonlyArray<readonly [TrackStatus, string]>) (
+    'plans %s owner as %s',
+    (status, kind) => {
+      const owner = track('owner', status)
+
+      expect(planIdentityClaim([candidate, owner], candidate.trackId, identity)).toEqual({
+        kind,
+        ownerTrackId: owner.trackId,
+      })
+    },
+  )
+
+  test('does not mutate the catalog or tracks while planning', () => {
+    const owner = track('owner', 'ready')
+    const catalog = Object.freeze([candidate, owner])
+    const before = JSON.stringify(catalog)
+
+    expect(planIdentityClaim(catalog, candidate.trackId, identity).kind).toBe('reuse-ready')
+    expect(JSON.stringify(catalog)).toBe(before)
+    expect(catalog).toEqual([candidate, owner])
   })
 })
