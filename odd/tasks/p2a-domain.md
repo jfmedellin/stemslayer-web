@@ -1,6 +1,6 @@
 # P2a — Profiles, pipeline identity, and track state
 
-Status: P2A-01 implemented and verified; P2A-02 pending. Delivery strategy: `ask-on-risk`; chain strategy: `stacked-to-main`.
+Status: P2A-01 committed/reviewed; P2A-02 implemented and verified; feature closure pending. Delivery strategy: `ask-on-risk`; chain strategy: `stacked-to-main`.
 
 ## Objective
 
@@ -56,7 +56,7 @@ Strict TDD is enabled by the project architecture and repository instructions. E
   - RED: profile invariants, canonical serialization, known Basic/Rock digest vectors, cosmetic-field exclusion, and identity-changing pipeline fields.
   - GREEN/REFACTOR: minimal dependency-free domain model, canonicalizer, `HashPort`, application hashing function, and clean names/boundaries.
   - Rollback: profile domain files, fingerprint application/port files, and their tests only.
-- [ ] **P2A-02 — Implement the track status machine.**
+- [x] **P2A-02 — Implement the track status machine.**
   - Route: delegated direct. Trigger: non-trivial entity rules and tests across multiple files.
   - RED: initial status, all allowed and rejected transitions, same-state metadata behavior, absent pre-identity source hash, and immutable identity fields.
   - GREEN/REFACTOR: minimal track entity and transition API without P2b claim rules.
@@ -72,9 +72,9 @@ Strict TDD is enabled by the project architecture and repository instructions. E
 - [x] Canonical identity produces the known Basic digest `2b0c71ec79d6c660c43842a8f45c99f4fbddf22e8cb5a81e4105a8284743ca69`.
 - [x] Canonical identity produces the known Rock digest `dc80db8098e29c07b43c90ca38bba381433ad6c3c3a43e096521773ff4813351`.
 - [x] Cosmetic changes do not affect identity; pipeline changes do.
-- [ ] Track transitions accept only the documented matrix and preserve immutable identity fields.
+- [x] Track transitions accept only the documented matrix and preserve immutable identity fields.
 - [x] Domain code imports no external packages or application/infrastructure/UI modules.
-- [ ] All focused and regression checks pass with observed strict-TDD evidence.
+- [x] All focused and regression checks pass with observed strict-TDD evidence.
 
 ## Forecast and delivery
 
@@ -95,8 +95,13 @@ P2a branches from the P1 commit `18230e5` while PR #2 remains open. Publication 
 - 2026-09-21 GREEN — the same focused command passed: 2 files, 16 tests. Known Basic/Rock hashes, canonical strings, profile invariants, cosmetic exclusion, and pipeline changes are covered.
 - 2026-09-21 REFACTOR — boundaries and names reviewed without behavior changes; focused rerun passed 2 files and 16 tests, `npm run lint` exited 0, and `npm run typecheck` exited 0.
 - 2026-09-21 regression — `npm test` passed 3 files/22 tests; `npm run test:browser` passed 1 file/1 test; `npm run build` passed with 16 transformed modules. Runtime harness remains N/A because this slice adds pure domain/application behavior.
-- 2026-09-21 delivery — slice 1 is 465 Git-authored additions including this tracker; the user authorized `size:exception` for the corrected count. Rollback removes `src/domain/stem-profile.ts`, `src/application/create-pipeline-fingerprint.ts`, `src/application/ports/hash-port.ts`, and both profile/fingerprint test files; commit and native assessment remain parent-owned.
+- 2026-09-21 slice 1 closure — commit `b8dc65621d6a2faf1153934c06b0790f44a69c25` (`feat(domain): add profiles and pipeline fingerprints`) contains 465 authored additions under the authorized exception. Native reliability review found no findings; approval was acknowledged for target `sha256:daf7f0f064cf982d209b52a325308763b1a3d7cab9699f0179976cbaf5d1c557`.
+- 2026-09-21 P2A-02 RED — `npm test -- tests/domain/track.test.ts` exited 1 because the intentionally absent `src/domain/track.ts` could not be imported; 0 tests were collected.
+- 2026-09-21 P2A-02 GREEN — the same focused command passed 1 file/47 tests, covering all allowed and rejected transitions, same-state rejection, metadata updates, absent then immutable `sourceHash`, and identity preservation.
+- 2026-09-21 P2A-02 REFACTOR — the first typecheck exposed TS2322 in the test path fixture; typing the transition-path map explicitly resolved it. The focused rerun passed 1 file/47 tests, `npm run lint` exited 0, and `npm run typecheck` exited 0.
+- 2026-09-21 P2A-02 regression — `npm test` passed 4 files/69 tests; `npm run test:browser` passed 1 file/1 test; `npm run build` passed with 16 transformed modules. Runtime harness is N/A because this slice is pure domain behavior.
+- 2026-09-21 slice 2 delivery — slice 2 is 290 Git-authored lines; cumulative P2a is 755 authored lines. Rollback removes `src/domain/track.ts`, `tests/domain/track.test.ts`, and these P2A-02 tracker updates without affecting P2A-01. Commit and native assessment remain parent-owned.
 
 ## Next step
 
-Commit and assess the verified P2A-01 work unit, then begin P2A-02 without changing this slice's rollback boundary.
+Commit and assess the verified P2A-02 work unit, then close the feature without changing either stacked slice's rollback boundary.
