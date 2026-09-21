@@ -4,7 +4,11 @@
  * `docs/decisions/browser-storage.md` section 2).
  */
 export interface StemStorePort {
-  /** Deletes one stored key; deleting an unknown key is a no-op. */
+  /** Writes one lane's encoded bytes under a result key (`writeLane('stems/track-1', 'vocals', bytes)`). */
+  writeLane(resultKey: string, laneId: string, audio: Uint8Array): Promise<void>
+  /** Reads back one lane's stored bytes, byte-identical to what was written. Rejects if the lane was never written. */
+  readLane(resultKey: string, laneId: string): Promise<Uint8Array>
+  /** Deletes one stored key (a whole result key, or one lane key within it); deleting an unknown key is a no-op. */
   delete(resultKey: string): Promise<void>
   /** Whether a given key is currently stored (startup validation sweep). */
   exists(resultKey: string): Promise<boolean>

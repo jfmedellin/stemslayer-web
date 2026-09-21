@@ -35,7 +35,7 @@ Stems are the bulk of what the app stores (≈101 MiB per stem per 5 minutes, `d
 ## Tasks
 
 - [x] **P5-01 — Float32 WAV codec.** Route: delegated writer. Checks: golden bytes from the desktop encoder; round trip; clipping and non-finite rejection with the desktop message shape; odd lengths and mono/stereo.
-- [ ] **P5-02 — `StemStorePort` extension and `OpfsStemStore`.** Route: same writer. Checks: write/read round trip byte-identical; delete removes the directory; exists/list; quota error mapping (simulated through an injected writable that throws a `QuotaExceededError` DOMException); per-test root cleanup.
+- [x] **P5-02 — `StemStorePort` extension and `OpfsStemStore`.** Route: same writer. Checks: write/read round trip byte-identical; delete removes the directory; exists/list; quota error mapping (simulated through an injected writable that throws a `QuotaExceededError` DOMException); per-test root cleanup.
 - [ ] **P5-03 — `NavigatorStorageQuota` and the sweep integration test.** Route: same writer. Checks: arithmetic against a fake `StorageManager`; real API sanity; orphan sweep and `validateReady` through the real store.
 - [ ] **P5-04 — Close the feature.** Route: inline. Checks: five commands green; evidence here; PR(s) opened stacked on #16.
 
@@ -56,8 +56,18 @@ Stems are the bulk of what the app stores (≈101 MiB per stem per 5 minutes, `d
   - Clipping message shape follows the app's own established convention (`{code} {cause} {recovery}`, e.g. `separation-copy.ts`'s `CANCELLED_ERROR_DETAIL`), not desktop's Python `f"{code}: {cause} Recovery: {recovery}"` string — same `export.clipping` code and `peak` field carried on the typed error, same "reduce gain" recovery wording as `wav.py`'s `ExportError`.
   - RED (`Cannot find module '../../src/infrastructure/opfs/float32-wav'`, 0 ran): all 5 tests in `tests/infrastructure/float32-wav.test.ts` — golden bytes, fixed header layout, mono/stereo round trip with an odd frame count, peak-above-1.0 clipping, non-finite-sample clipping.
   - GREEN on first implementation pass (all 5), no fixes needed. `npm test` → 19 files, 180 tests (175 + 5 new). `npm run test:browser` → 5 files, 17 tests (unchanged). `npm run typecheck`, `npm run lint` both clean.
-  - Commit `<pending>` — `feat(infrastructure): add the float32 WAV codec`.
+  - Commit `57c6466` — `feat(infrastructure): add the float32 WAV codec` (242 lines: `git diff --shortstat 2dfcb8c 57c6466 -- src tests`).
+
+- 2026-09-21 — **P5-02 done.** `StemStorePort` extended with `writeLane`/`readLane`; `OpfsStemStore`, `StorageQuotaExceededError` in `src/infrastructure/opfs/opfs-stem-store.ts`; `tests/fakes/in-memory-stem-store.ts` extended to match.
+  - Technical shape decision: lane bytes are `Uint8Array` on both `writeLane` and `readLane` (not `Blob`) — consistent with `WebCryptoHash`'s existing `Uint8Array` convention in this codebase and avoids a Node/browser type split in the fake.
+  - Technical shape decision: `OpfsStemStore`'s constructor takes a `rootDirectoryName` option (default `stems`, the production root); tests pass a unique name per test for isolation, never the production root. A "key" accepted by `delete`/`exists` is resolved generically: the full result key (`resultKey`, e.g. `stems/track-1`, embedding its own `/` segments as nested OPFS directories under the store's root) or one lane key within it (`${resultKey}/${laneId}`, the shape `expectedLaneKeys` already produces for `separate.ts`'s per-lane cleanup and `run-startup-sweeps.ts`'s `validateReady`) — resolved by trying the last segment first as a directory, then as a `<name>.wav` file. `listResultKeys` walks the tree recursively and returns the joined path of every leaf directory (one holding files, not further subdirectories), so it works regardless of how many `/`-segments a result key embeds.
+  - `writeLane` accepts an injectable `createWritable` factory (default `fileHandle.createWritable()`) so quota exhaustion can be simulated deterministically in tests without writing hundreds of MiB; a `QuotaExceededError` DOMException from it is mapped to `StorageQuotaExceededError` carrying the desktop message (`browser-storage.md` section 4).
+  - RED, fake extension (`tests/fakes/in-memory-stem-store.test.ts`, Node): `store.writeLane is not a function` / `store.readLane is not a function`, 3 failing — round trip, result-key-and-lane-key existence, read-before-write rejection.
+  - RED, `OpfsStemStore` (`Failed to resolve import "./opfs-stem-store"`, 0 ran): all 9 tests in `opfs-stem-store.browser.test.ts` — round trip, multiple lanes, exists (result key and lane key), listResultKeys, delete-whole-result-key, delete-single-lane-keeps-siblings, delete-unknown-is-no-op, quota mapping, root isolation.
+  - One lint fix after GREEN: `readLane`'s not-found rethrow needed `{ cause: error }` for the `preserve-caught-error` rule.
+  - GREEN: `npm test` → 19 files, 183 tests (175 + 5 codec + 3 fake). `npm run test:browser` → 6 files, 26 tests (17 + 9 new), run twice for stability. `npm run typecheck`, `npm run lint` both clean.
+  - Commit `<pending>` — `feat(infrastructure): add the OPFS stem store adapter`.
 
 ## Next step
 
-P5-02 — `StemStorePort` extension and `OpfsStemStore`, by the same writer.
+P5-03 — `NavigatorStorageQuota` and the sweep integration test, by the same writer.

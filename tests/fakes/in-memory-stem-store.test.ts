@@ -52,4 +52,28 @@ describe('InMemoryStemStore', () => {
 
     await expect(store.listResultKeys()).resolves.toEqual([])
   })
+
+  test('writeLane then readLane round trips the exact bytes', async () => {
+    const store = new InMemoryStemStore()
+    const audio = Uint8Array.from([1, 2, 3, 4, 5])
+
+    await store.writeLane('stems/track-1', 'vocals', audio)
+
+    await expect(store.readLane('stems/track-1', 'vocals')).resolves.toEqual(audio)
+  })
+
+  test('writeLane makes the lane key and the result key exist', async () => {
+    const store = new InMemoryStemStore()
+
+    await store.writeLane('stems/track-1', 'vocals', Uint8Array.from([9]))
+
+    await expect(store.exists('stems/track-1')).resolves.toBe(true)
+    await expect(store.exists('stems/track-1/vocals')).resolves.toBe(true)
+  })
+
+  test('readLane on a lane that was never written rejects', async () => {
+    const store = new InMemoryStemStore()
+
+    await expect(store.readLane('stems/track-1', 'vocals')).rejects.toThrow()
+  })
 })
