@@ -1,6 +1,6 @@
 # P6 — Cache API model store
 
-Status: P6-01 committed and assessed; P6-02 pending. Delivery strategy: `ask-on-risk`; chain strategy: `feature-branch-chain`.
+Status: complete locally; P6-01 reviewed and P6-02 committed/assessed. Delivery strategy: `ask-on-risk`; chain strategy: `feature-branch-chain`.
 
 ## Objective
 
@@ -53,12 +53,12 @@ The pinned URLs must match `spikes/s2/models.js`; final verification must also r
   - RED: unknown profile; cold download progress; verified cache hit without network/progress; network/stream/size/digest failures; failed entries removed.
   - GREEN/REFACTOR: minimal typed manifest and `CacheApiModelStore` implementation.
   - Rollback: manifest, adapter, focused browser tests, and this task's tracker evidence.
-- [ ] **P6-02 — Make revision replacement atomic.**
+- [x] **P6-02 — Make revision replacement atomic.**
   - Route: delegated direct. Trigger: multi-cache lifecycle behavior plus failure-preservation tests.
   - RED: failed replacement preserves prior revision; successful replacement activates the new revision and removes only obsolete revisions for the same profile.
   - GREEN/REFACTOR: profile+revision cache identity and post-verification cleanup.
   - Rollback: revision transition behavior and its tests without removing P6-01 cache verification.
-- [ ] **P6-03 — Close the feature.**
+- [x] **P6-03 — Close the feature.**
   - Route: parent-owned commits, assessments, final verification evidence, and Engram mirror update.
   - Evidence: focused/full checks, strict-TDD history, authored counts, rollback boundaries, commit identities, and delivery decision.
 
@@ -69,10 +69,10 @@ The pinned URLs must match `spikes/s2/models.js`; final verification must also r
 - [x] Unknown profiles and all unverified content fail closed with typed errors.
 - [x] A verified cache hit performs no network access and emits no download progress.
 - [x] A digest or size mismatch removes the new invalid entry and never exposes its bytes.
-- [ ] A failed revision replacement preserves the previous verified revision.
-- [ ] A successful replacement activates the new revision and removes only obsolete revisions for the same profile.
+- [x] A failed revision replacement preserves the previous verified revision.
+- [x] A successful replacement activates the new revision and removes only obsolete revisions for the same profile.
 - [x] Inputs and returned metadata are immutable where applicable.
-- [x] Focused and regression checks pass with observed strict-TDD evidence for P6-01.
+- [x] Focused and regression checks pass with observed strict-TDD evidence for P6-01 and P6-02.
 
 ## Forecast and delivery
 
@@ -96,7 +96,12 @@ No remote operation is authorized by this tracker.
 - 2026-09-21 — P6-01 REFACTOR/verification: focused browser tests remained 8/8; typecheck and lint passed; node tests passed 175/175; full browser tests passed 25/25; production build passed. The work unit adds 390 source/test lines before tracker evidence. Runtime harness: browser-project tests exercise Chromium Cache API, Fetch Response streams, and WebCrypto. Rollback boundary: remove `src/infrastructure/cache-api/` without affecting the existing application port or P1–P5 behavior. Commit and native assessment remain parent-owned.
 - 2026-09-21 — User selected `feature-branch-chain` for P6 after the observed feature record plus P6-01 implementation exceeded the 400-line review heuristic.
 - 2026-09-21 — P6-01 source/test commit `2c78803ebb76cd975ce430af743e39583179397e` (`feat(infrastructure): add verified Cache API model store`) contains 390 authored additions. Native assessment was medium/under_budget, so review remains pending in the feature slice.
+- 2026-09-21 — Tracker commit `fbafe8c` completed the P6-01 reviewed boundary. Native lineage `review-729c8040040eef5f` approved the slice with no surfaced findings and its acknowledgement was consumed.
+- 2026-09-21 — P6-02 RED: the focused browser suite ran 13 tests with 1 failure because a verified replacement left the prior same-profile revision cache in place.
+- 2026-09-21 — P6-02 GREEN/REFACTOR: the focused suite passed 13/13 after cache names gained an unambiguous profile/revision separator and successful verification triggered same-profile obsolete-revision cleanup. Download, size, digest, and cache-write failure cases preserve the previous verified revision; successful replacement preserves another profile. The source/test work unit currently contains 100 authored changed lines before tracker evidence. Runtime harness: Chromium Cache API tests exercise both failed and successful revision transitions. Rollback boundary: revert the P6-02 additions in `cache-api-model-store.ts` and its focused replacement tests while retaining the P6-01 manifest, verification, progress, and typed failure behavior.
+- 2026-09-21 — P6-02 source/test commit `df7b4e03a9600c430c62c34f4c5ed7cf586cac57` (`feat(infrastructure): activate model revisions atomically`) contains 99 additions and 1 deletion. Native assessment against the reviewed P6-01 boundary was medium/under_budget.
+- 2026-09-21 — Final verification passed: focused browser 13/13, typecheck, lint, node 175/175, full browser 30/30, production build, and `git diff --check`.
 
 ## Next step
 
-Commit this tracker evidence, assess the resulting slice, then execute P6-02 without weakening P6-01 verification.
+Commit and assess this closure record. Publication remains a separate user-owned decision under `feature-branch-chain`.
