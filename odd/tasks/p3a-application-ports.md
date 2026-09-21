@@ -36,7 +36,7 @@ Define the application layer's ports with in-memory fakes and implement the thre
 
 ## Tasks
 
-- [ ] **P3A-01 — Ports and fakes.** Route: delegated writer. Checks: every port has a doc comment naming the adapter task that implements it; fakes have their own focused tests for the behaviours the use cases rely on (lock serialisation order, hash determinism, quota arithmetic).
+- [x] **P3A-01 — Ports and fakes.** Route: delegated writer. Checks: every port has a doc comment naming the adapter task that implements it; fakes have their own focused tests for the behaviours the use cases rely on (lock serialisation order, hash determinism, quota arithmetic).
 - [ ] **P3A-02 — `addToLibrary`.** Route: same writer. Checks: the six translated desktop scenarios above pass; quota refusal leaves the catalog untouched; the concurrent test proves one claim.
 - [ ] **P3A-03 — `removeTrack` and `retryTrack`.** Route: same writer. Checks: refusal while running; stem-store failure lands on `unavailable`; retry statuses and `errorDetail` clearing; unknown id.
 - [ ] **P3A-04 — Close the feature.** Route: inline. Checks: all five commands green; this document carries the evidence; PR opened stacked on #6.
@@ -50,6 +50,11 @@ Define the application layer's ports with in-memory fakes and implement the thre
 ## Progress / evidence
 
 - 2026-09-21 — branch and document created. Forecast ≈450 authored lines (ports ~120, fakes ~150, use cases ~120, tests ~250; the total exceeds the per-task heuristic across three commits, not within one).
+- 2026-09-21 — **P3A-01 done.** Ports are pure interface declarations with no runtime behaviour, so no RED/GREEN cycle applies to them (same as the existing `hash-port.ts`, which has no dedicated test); only the fakes carry behaviour and went through TDD.
+  - Fakes location decision: `tests/fakes/` (tracker's first option), since nothing outside tests imports them and it keeps them out of the shipped `src/` tree.
+  - Port→adapter task mapping used in doc comments: `CatalogPort`→P4 (indexeddb), `StemStorePort`→P5 (opfs), `ModelStorePort`→P6 (cache-api), `InferencePort`→P7 (onnx-worker), `AudioEnginePort`→P8 (web-audio), `LockPort`→P9 (web-locks). `QuotaPort` has no dedicated adapter folder in `architecture.md`'s infrastructure layout (it wraps one global `navigator.storage.estimate()` call); documented as implemented alongside P5. This is a technical labeling call, not a product decision, so it did not block the task.
+  - RED (all failed on `Cannot find module`, confirmed before any fake existed): `FakeLock > serializes callbacks racing for the same key in call order`, `FakeLock > does not serialize callbacks for different keys`, `FakeLock > a rejecting callback still releases the key for the next caller`, `FakeHash > is deterministic for the same bytes`, `FakeHash > is distinct for different content`, `FakeQuota > reports the configured available bytes`, `FakeQuota > reflects a later change in available bytes`, `InMemoryCatalog > starts empty`, `InMemoryCatalog > inserts and reads a track back`, `InMemoryCatalog > updates an existing track in place`, `InMemoryCatalog > removes a track`, `InMemoryStemStore > deletes a stored key without error`, `InMemoryStemStore > deleting an unknown key is a no-op`, `InMemoryStemStore > rejects when the key is configured to fail`, `InMemoryModelStore > reports an uncached profile with zero size by default`, `InMemoryModelStore > reports a configured footprint` (6 suites failed to import, 0 ran).
+  - GREEN: `npm test` → 11 test files passed, 118 tests passed (102 pre-existing + 16 new). `npm run typecheck` and `npm run lint` both clean.
 
 ## Next step
 
