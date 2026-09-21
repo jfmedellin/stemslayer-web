@@ -1,4 +1,7 @@
 .atl/
+.codegraph/
+node_modules/
+dist/
 
 # spike artifacts: model files, reference stems and local virtualenvs are never committed
 spikes/**/models/
