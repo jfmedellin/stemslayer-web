@@ -37,7 +37,8 @@ Every use case from P3 runs against fakes. The catalog is where the desktop's pe
 - [x] **P4-01 — Web Crypto `HashPort` and Web Locks `LockPort`.** Route: delegated writer. Checks: known SHA-256 vectors; lock serialisation and release-on-rejection in the browser; unsupported-environment error.
 - [x] **P4-02 — IndexedDB `CatalogPort`.** Route: same writer. Checks: schema, ordering, duplicate key, identity collision, update/remove, frozen round trip, cross-instance visibility; databases cleaned up per test.
 - [x] **P4-03 — End-to-end wiring test.** Route: same writer. Checks: real catalog + lock + hash through `addToLibrary`; two racing adds claim once.
-- [ ] **P4-04 — Close the feature.** Route: inline. Checks: five commands green; evidence here; PR(s) opened stacked on #14.
+- [x] **P4-04 — Close the feature.** Route: inline. Checks: five commands green; evidence here; PR(s) opened stacked on #14.
+  - Done 2026-09-21: parent re-ran `npm run typecheck`, `npm run lint`, `npm test` (175/175), `npm run test:browser` twice (17/17), `npm run build`; all green. Authored diff 495 lines in `src`, `tests` and `vitest.config.ts`; delivered as one PR with `size:exception` (splitting the 133-line hash/lock commit from the catalog would not improve review focus).
 
 ## Acceptance criteria
 
@@ -67,7 +68,7 @@ Every use case from P3 runs against fakes. The catalog is where the desktop's pe
   - No new production code: this task is pure composition of already-implemented pieces (P3a's `addToLibrary`, P4-01's hash/lock, P4-02's catalog), so neither a missing-module RED nor a behavioural RED was available or applicable — recorded per the brief's "behavioural RED preferred... where the module already exists" note, extended to the case where no module needs to exist at all. The test passed on its first run; stability was instead verified by running `npm run test:browser` four times in a row (all 17/17) to rule out a race-condition flake in the two-racing-`Promise.all` assertion, since the safety this test proves is exactly about concurrency.
   - Two concurrent `addToLibrary` calls for identical bytes/profile: one resolves `claimed`, the other `awaiting` (both target `preparing` status, so `planIdentityClaim` resolves the second as `await-owner`, not a second claim); `catalog.listAll()` afterward has exactly one row, `status: 'preparing'` — the identity claim exactly once, end to end through the real Web Lock.
   - GREEN: `npm run test:browser` → 5 files, 17 tests, run four times total for stability. `npm test` → 18 files, 175 tests (unchanged). `npm run typecheck`, `npm run lint` both clean.
-  - Commit `<pending>` — `feat(infrastructure): add the end-to-end add-to-library wiring test`.
+  - Commit `9eec396` — `feat(infrastructure): add the end-to-end add-to-library wiring test` (59 lines).
 
 ## Next step
 
