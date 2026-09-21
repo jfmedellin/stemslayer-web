@@ -2,20 +2,18 @@ import { planIdentityClaim, type TrackIdentity } from '../domain/identity-claim'
 import {
   assignTrackSourceHash,
   createTrack,
-  rebindTrackSourceHashForRetry,
   transitionTrack,
   updateTrackMetadata,
   type Track,
 } from '../domain/track'
 import type { StemProfile } from '../domain/stem-profile'
 import { createPipelineFingerprint } from './create-pipeline-fingerprint'
+import { IDENTITY_CLAIM_LOCK_KEY } from './identity-claim-lock-key'
 import type { CatalogPort } from './ports/catalog-port'
 import type { HashPort } from './ports/hash-port'
 import type { LockPort } from './ports/lock-port'
 import type { ModelStorePort } from './ports/model-store-port'
 import type { QuotaPort } from './ports/quota-port'
-
-const IDENTITY_CLAIM_LOCK_KEY = 'stemslayer:identity-claim'
 
 // docs/decisions/browser-storage.md section 2: 44,100 samples/s * 4 bytes
 // (float32) * 2 channels * 60 s/min * 5 min, per stem, for a worst-case
@@ -114,8 +112,7 @@ export async function addToLibrary(
       return Object.freeze({ decision: 'awaiting', track: owner })
     }
 
-    const rebound = rebindTrackSourceHashForRetry(owner, sourceHash)
-    const preparing = transitionTrack(rebound, 'preparing')
+    const preparing = transitionTrack(owner, 'preparing')
     const adopted = updateTrackMetadata(preparing, { errorDetail: null })
     await deps.catalog.update(adopted)
     return Object.freeze({ decision: 'adopted', track: adopted })

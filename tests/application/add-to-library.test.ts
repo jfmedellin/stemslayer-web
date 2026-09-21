@@ -96,11 +96,10 @@ describe('addToLibrary', () => {
     // matches a competitor whose sourceHash+pipelineFingerprint exactly equal
     // the identity being claimed, so 'adopt-and-retry' can only fire for the
     // *same* content re-submitted after a failure (desktop's
-    // test_failed_duplicate_retries_the_existing_identity), never for content
-    // whose hash differs from the failed row's. rebindTrackSourceHashForRetry
-    // is still called unconditionally for symmetry with that domain
-    // function's contract; here it is a no-op because the hash already
-    // matches.
+    // test_failed_duplicate_retries_the_existing_identity). The hash always
+    // matches the owner's here already, so addToLibrary does not rebind it;
+    // rebinding a genuinely different hash on retry is retryTrack's job
+    // (retry-track.ts), which takes the freshly supplied bytes explicitly.
     const deps = makeDeps()
     const bytes = new Uint8Array([7, 7, 7])
     const claim = await addToLibrary({ bytes, fileName: 'song.wav', profile: BASIC_PROFILE }, deps)
