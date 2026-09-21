@@ -35,7 +35,7 @@ Every use case from P3 runs against fakes. The catalog is where the desktop's pe
 ## Tasks
 
 - [x] **P4-01 — Web Crypto `HashPort` and Web Locks `LockPort`.** Route: delegated writer. Checks: known SHA-256 vectors; lock serialisation and release-on-rejection in the browser; unsupported-environment error.
-- [ ] **P4-02 — IndexedDB `CatalogPort`.** Route: same writer. Checks: schema, ordering, duplicate key, identity collision, update/remove, frozen round trip, cross-instance visibility; databases cleaned up per test.
+- [x] **P4-02 — IndexedDB `CatalogPort`.** Route: same writer. Checks: schema, ordering, duplicate key, identity collision, update/remove, frozen round trip, cross-instance visibility; databases cleaned up per test.
 - [ ] **P4-03 — End-to-end wiring test.** Route: same writer. Checks: real catalog + lock + hash through `addToLibrary`; two racing adds claim once.
 - [ ] **P4-04 — Close the feature.** Route: inline. Checks: five commands green; evidence here; PR(s) opened stacked on #14.
 
@@ -55,8 +55,14 @@ Every use case from P3 runs against fakes. The catalog is where the desktop's pe
   - RED (`Failed to resolve import`, 0 ran, module did not exist): `hashes the known SHA-256 vector for "abc"`, `hashes the known SHA-256 vector for empty input`; then `serializes two callbacks racing for the same key`, `releases the lock after a rejecting callback so the next caller still runs`, `throws a typed error when the Locks API is unavailable`.
   - One test-only flake fixed before GREEN: the racing-callbacks test first used an arbitrary `setTimeout(10)` to let the first callback start, which failed once (`expected [] to deeply equal ['first-start']`) — replaced with a deterministic "first callback is running" signal promise; stable across two full `npm run test:browser` runs afterward.
   - GREEN: `npm run test:browser` → 3 files, 6 tests, run twice for stability. `npm test` → 18 files, 175 tests (unchanged, no Node-project adapter imports). `npm run typecheck`, `npm run lint` both clean.
-  - Commit `<pending>` — `feat(infrastructure): add Web Crypto hash and Web Locks lock adapters`.
+  - Commit `7db1086` — `feat(infrastructure): add Web Crypto hash and Web Locks lock adapters` (133 lines: `git diff --shortstat <parent> 7db1086 -- src tests vitest.config.ts`, includes the `vitest.config.ts` one-line widen).
+
+- 2026-09-21 — **P4-02 done.** `IndexedDbCatalog`, `DuplicateTrackIdError`, `TrackNotFoundError`, `IdentityCollisionError` in `src/infrastructure/indexeddb/indexeddb-catalog.ts`.
+  - `insert`/`update` check for an existing row with a preliminary `getById` (typed `DuplicateTrackIdError`/`TrackNotFoundError`) before the IDB write; a `ConstraintError` from the write itself (the `by_identity` unique-index collision, the actual safety net under the Web Lock) is mapped to `IdentityCollisionError`. `close()` is exposed beyond `CatalogPort` for connection lifecycle (used by tests and available for app shutdown).
+  - RED (`Failed to resolve import`, 0 ran, module did not exist): all 10 tests in `indexeddb-catalog.browser.test.ts` — schema/version, insert+getById round trip, `listAll` newest-first ordering, duplicate-key rejection, identity-index-collision rejection, no-sourceHash-never-collides, update-requires-existing-row, remove-unknown-is-no-op, frozen round trip, two-instances-same-database visibility.
+  - GREEN on first implementation pass (all 10), no fixes needed. `npm run test:browser` → 4 files, 16 tests, run twice for stability. `npm test` → 18 files, 175 tests (unchanged). `npm run typecheck`, `npm run lint` both clean.
+  - Commit `<pending>` — `feat(infrastructure): add the IndexedDB catalog adapter`.
 
 ## Next step
 
-P4-02 (IndexedDB `CatalogPort`) by the same writer.
+P4-03 (end-to-end wiring test) by the same writer.
