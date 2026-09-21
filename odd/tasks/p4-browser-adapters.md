@@ -36,7 +36,7 @@ Every use case from P3 runs against fakes. The catalog is where the desktop's pe
 
 - [x] **P4-01 — Web Crypto `HashPort` and Web Locks `LockPort`.** Route: delegated writer. Checks: known SHA-256 vectors; lock serialisation and release-on-rejection in the browser; unsupported-environment error.
 - [x] **P4-02 — IndexedDB `CatalogPort`.** Route: same writer. Checks: schema, ordering, duplicate key, identity collision, update/remove, frozen round trip, cross-instance visibility; databases cleaned up per test.
-- [ ] **P4-03 — End-to-end wiring test.** Route: same writer. Checks: real catalog + lock + hash through `addToLibrary`; two racing adds claim once.
+- [x] **P4-03 — End-to-end wiring test.** Route: same writer. Checks: real catalog + lock + hash through `addToLibrary`; two racing adds claim once.
 - [ ] **P4-04 — Close the feature.** Route: inline. Checks: five commands green; evidence here; PR(s) opened stacked on #14.
 
 ## Acceptance criteria
@@ -61,8 +61,14 @@ Every use case from P3 runs against fakes. The catalog is where the desktop's pe
   - `insert`/`update` check for an existing row with a preliminary `getById` (typed `DuplicateTrackIdError`/`TrackNotFoundError`) before the IDB write; a `ConstraintError` from the write itself (the `by_identity` unique-index collision, the actual safety net under the Web Lock) is mapped to `IdentityCollisionError`. `close()` is exposed beyond `CatalogPort` for connection lifecycle (used by tests and available for app shutdown).
   - RED (`Failed to resolve import`, 0 ran, module did not exist): all 10 tests in `indexeddb-catalog.browser.test.ts` — schema/version, insert+getById round trip, `listAll` newest-first ordering, duplicate-key rejection, identity-index-collision rejection, no-sourceHash-never-collides, update-requires-existing-row, remove-unknown-is-no-op, frozen round trip, two-instances-same-database visibility.
   - GREEN on first implementation pass (all 10), no fixes needed. `npm run test:browser` → 4 files, 16 tests, run twice for stability. `npm test` → 18 files, 175 tests (unchanged). `npm run typecheck`, `npm run lint` both clean.
-  - Commit `<pending>` — `feat(infrastructure): add the IndexedDB catalog adapter`.
+  - Commit `a847627` — `feat(infrastructure): add the IndexedDB catalog adapter` (313 lines).
+
+- 2026-09-21 — **P4-03 done.** `src/infrastructure/add-to-library.browser.test.ts` wires `IndexedDbCatalog` + `WebLocksLock` + `WebCryptoHash` into the P3a `addToLibrary` use case, with `InMemoryModelStore` (footprint pre-cached, no download) and `FakeQuota` for the remaining ports.
+  - No new production code: this task is pure composition of already-implemented pieces (P3a's `addToLibrary`, P4-01's hash/lock, P4-02's catalog), so neither a missing-module RED nor a behavioural RED was available or applicable — recorded per the brief's "behavioural RED preferred... where the module already exists" note, extended to the case where no module needs to exist at all. The test passed on its first run; stability was instead verified by running `npm run test:browser` four times in a row (all 17/17) to rule out a race-condition flake in the two-racing-`Promise.all` assertion, since the safety this test proves is exactly about concurrency.
+  - Two concurrent `addToLibrary` calls for identical bytes/profile: one resolves `claimed`, the other `awaiting` (both target `preparing` status, so `planIdentityClaim` resolves the second as `await-owner`, not a second claim); `catalog.listAll()` afterward has exactly one row, `status: 'preparing'` — the identity claim exactly once, end to end through the real Web Lock.
+  - GREEN: `npm run test:browser` → 5 files, 17 tests, run four times total for stability. `npm test` → 18 files, 175 tests (unchanged). `npm run typecheck`, `npm run lint` both clean.
+  - Commit `<pending>` — `feat(infrastructure): add the end-to-end add-to-library wiring test`.
 
 ## Next step
 
-P4-03 (end-to-end wiring test) by the same writer.
+P4-04 (close the feature): re-run all five checks, confirm evidence, open the PR stacked on #14.
