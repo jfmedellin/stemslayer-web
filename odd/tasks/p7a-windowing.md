@@ -1,6 +1,6 @@
 # P7a — Windowing and Basic spectral processing
 
-Status: P7A-01 committed and assessed; P7A-02 pending. Delivery strategy: `ask-on-risk`; chain strategy: `feature-branch-chain`.
+Status: P7A-01 reviewed; overlap-proof follow-up pending before spectral work. Delivery strategy: `ask-on-risk`; chain strategy: `feature-branch-chain`.
 
 ## Objective
 
@@ -46,12 +46,23 @@ The ONNX Worker cannot safely execute either model until input windows, overlap 
   - GREEN/REFACTOR: minimal immutable planar-window API and normalized overlap-add.
   - Tolerance: maximum identity reconstruction error `<= 1e-6`.
   - Rollback: `windowing.ts`, its focused tests, and this task's tracker evidence.
-- [ ] **P7A-02 — Add Basic external spectral processing.**
-  - Route: delegated direct. Trigger: FFT, STFT/iSTFT, CAC, Demucs padding, and golden parity tests span multiple non-trivial files.
-  - RED: FFT and STFT round trips, S2 golden bins, Nyquist handling, CAC layout, padding/frame count, and branch reconstruction.
-  - GREEN/REFACTOR: radix-2 FFT plus Basic-only spectral adapters; no Worker/ONNX behavior.
+- [x] **P7A-01F — Prove triangular overlap blending independently.**
+  - Route: delegated direct follow-up. Trigger: native advisory `R3-001` requires an independent numerical oracle rather than another identity reconstruction.
+  - Proof: successive windows return distinct constants; assertions calculate expected overlap samples independently, including a partial final window.
+  - This is separate later work and never reopens or reruns the approved P7A-01 candidate.
+  - Rollback: the focused proof and its tracker evidence only.
+- [ ] **P7A-02A — Add radix-2 FFT primitives.**
+  - Route: delegated direct. Trigger: numerical kernel plus deterministic round-trip and golden-vector tests.
+  - RED: invalid FFT lengths, deterministic complex fixtures, and real FFT round trips.
+  - GREEN/REFACTOR: minimal FFT/rFFT/iFFT primitives with internal `Float64Array` precision.
   - Tolerance: round-trip and golden maximum error `<= 1e-6`.
-  - Rollback: `fft.ts`, `stft.ts`, their focused tests, and P7A-02 tracker evidence; P7A-01 remains.
+  - Rollback: `fft.ts`, its focused tests, and P7A-02A tracker evidence.
+- [ ] **P7A-02B — Add Basic STFT and CAC processing.**
+  - Route: delegated direct. Trigger: STFT/iSTFT, CAC, Demucs padding, and golden parity tests span multiple non-trivial files.
+  - RED: STFT round trips, S2 golden bins, Nyquist handling, CAC layout, padding/frame count, and branch reconstruction.
+  - GREEN/REFACTOR: Basic-only spectral adapters over P7A-02A; no Worker/ONNX behavior.
+  - Tolerance: round-trip and golden maximum error `<= 1e-6`.
+  - Rollback: `stft.ts`, its focused tests, and P7A-02B tracker evidence; windowing and FFT remain.
 - [ ] **P7A-03 — Close P7a.**
   - Route: parent-owned commits, assessments, final checks, and Engram mirror update.
   - Evidence: strict-TDD history, exact checks, authored counts, rollback boundaries, commit identities, and native outcomes.
@@ -69,7 +80,7 @@ The ONNX Worker cannot safely execute either model until input windows, overlap 
 
 ## Forecast and delivery
 
-Forecast: P7A-01 approximately 300–420 authored lines; P7A-02 approximately 450–650 authored lines. Two feature-branch-chain slices are the honest boundary because the S2 DSP source alone exceeds the original roadmap estimate. The 400-line value remains a review heuristic and will not be met by deleting tests, documentation, or clarity.
+Forecast: P7A-01 approximately 300–420 authored lines; P7A-01F is a small proof follow-up; P7A-02A and P7A-02B split the original 450–650-line spectral estimate into honest FFT and STFT/CAC slices. The 400-line value remains a review heuristic and will not be met by deleting tests, documentation, or clarity.
 
 Planned chain:
 
@@ -97,7 +108,9 @@ feat/p7-integration
 - 2026-09-21 — P7A-01 verification: focused 1 file / 16 tests; full Node suite 20 files / 199 tests; typecheck, lint, build, and whitespace checks passed.
 - 2026-09-21 — P7A-01 rollback boundary: remove `src/infrastructure/onnx-worker/windowing.ts`, `tests/infrastructure/onnx-worker/windowing.test.ts`, and this P7A-01 evidence; P7A-02 and Worker behavior remain absent.
 - 2026-09-21 — P7A-01 source/test commit `25067de772275d2cbd294c927ed2483a0e8d123a` (`feat(inference): add fixed-window overlap reconstruction`) contains 304 authored additions. Native assessment was medium/under_budget, so review remains pending in the feature slice.
+- 2026-09-21 — Tracker commit `968d58f` brought the combined candidate to 407 authored lines. Native lineage `review-fc873875ea898c02` approved and acknowledged the candidate; advisory `R3-001` requested a separate later proof that distinct per-window outputs blend with the exact triangular weights.
+- 2026-09-21 — P7A-01F verification-only follow-up: added an independent numerical oracle that never calls production weight helpers, feeds constants `1`, `2`, and `3` from successive windows, and checks representative samples in both the full-window overlap and the seven-sample partial-final overlap. The focused suite passed immediately (1 file / 17 tests), so production code was unchanged and no RED was fabricated. Runtime harness remains N/A for this pure deterministic proof. Rollback: remove this focused test and P7A-01F evidence only; approved P7A-01 remains intact.
 
 ## Next step
 
-Commit this tracker evidence and assess the resulting slice before P7A-02.
+Commit and assess P7A-01F as a new candidate, then execute P7A-02A.
