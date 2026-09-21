@@ -51,7 +51,7 @@ The ONNX Worker cannot safely execute either model until input windows, overlap 
   - Proof: successive windows return distinct constants; assertions calculate expected overlap samples independently, including a partial final window.
   - This is separate later work and never reopens or reruns the approved P7A-01 candidate.
   - Rollback: the focused proof and its tracker evidence only.
-- [ ] **P7A-02A — Add radix-2 FFT primitives.**
+- [x] **P7A-02A — Add radix-2 FFT primitives.**
   - Route: delegated direct. Trigger: numerical kernel plus deterministic round-trip and golden-vector tests.
   - RED: invalid FFT lengths, deterministic complex fixtures, and real FFT round trips.
   - GREEN/REFACTOR: minimal FFT/rFFT/iFFT primitives with internal `Float64Array` precision.
@@ -73,7 +73,7 @@ The ONNX Worker cannot safely execute either model until input windows, overlap 
 - [x] Short, exact, overlapping, and partial-final inputs reconstruct with maximum error `<= 1e-6`.
 - [x] Frame count and channel alignment are preserved; invalid shapes fail closed.
 - [x] Full triangular weighting and accumulated normalization match S2 behavior.
-- [ ] FFT and STFT/iSTFT round trips satisfy `<= 1e-6`.
+- [ ] FFT and STFT/iSTFT round trips satisfy `<= 1e-6`. (FFT/iFFT half closed by P7A-02A; STFT/iSTFT half remains P7A-02B's.)
 - [ ] Basic CAC layout, Nyquist behavior, Demucs padding, and branch reconstruction match S2 evidence.
 - [ ] Rock remains waveform-only and does not depend on Basic spectral code.
 - [ ] Focused and full checks pass with observed strict-TDD evidence.
@@ -111,6 +111,13 @@ feat/p7-integration
 - 2026-09-21 — Tracker commit `968d58f` brought the combined candidate to 407 authored lines. Native lineage `review-fc873875ea898c02` approved and acknowledged the candidate; advisory `R3-001` requested a separate later proof that distinct per-window outputs blend with the exact triangular weights.
 - 2026-09-21 — P7A-01F verification-only follow-up: added an independent numerical oracle that never calls production weight helpers, feeds constants `1`, `2`, and `3` from successive windows, and checks representative samples in both the full-window overlap and the seven-sample partial-final overlap. The focused suite passed immediately (1 file / 17 tests), so production code was unchanged and no RED was fabricated. Runtime harness remains N/A for this pure deterministic proof. Rollback: remove this focused test and P7A-01F evidence only; approved P7A-01 remains intact.
 
+- 2026-09-21 — P7A-02A strict-TDD RED: `npm test -- --run tests/infrastructure/onnx-worker/fft.test.ts` failed before source implementation because `src/infrastructure/onnx-worker/fft` did not exist (0 tests collected, import error).
+- 2026-09-21 — P7A-02A GREEN: the same focused command passed 1 file / 23 tests. Implemented `transformInPlace` (in-place radix-2 iterative Cooley-Tukey FFT/iFFT with bit-reversal permutation and `1/length` inverse normalization), `forwardFft`/`inverseFft` wrappers, and `realForwardFft`/`realInverseFft` (non-redundant `[0, length/2]` bin real transform with conjugate-mirror reconstruction), all restricted to power-of-two lengths and computed in `Float64Array` precision. Tests include invalid-length/invalid-bin RED cases, deterministic complex fixtures checked against an independent O(n^2) direct-DFT oracle (not the FFT itself), complex and real round trips at multiple power-of-two lengths (including 4096), and a DC/Nyquist real-bin check.
+- 2026-09-21 — P7A-02A REFACTOR: extracted `assertPowerOfTwoLength`, `assertRealTransformLength`, and `bitReversalPermute` helpers; no behavior change. `npm run typecheck` and `npm run lint` passed. Runtime harness: N/A — pure deterministic DSP, no browser/Worker/ONNX boundary.
+- 2026-09-21 — P7A-02A verification: focused 1 file / 23 tests; full Node suite 21 files / 223 tests; `npm run typecheck`, `npm run lint`, and `npm run build` passed.
+- 2026-09-21 — P7A-02A rollback boundary: remove `src/infrastructure/onnx-worker/fft.ts`, `tests/infrastructure/onnx-worker/fft.test.ts`, and this P7A-02A tracker evidence; P7A-01/P7A-01F remain intact and P7A-02B stays absent.
+- 2026-09-21 — P7A-02A source/test commit `fa06725` (`feat(inference): add radix-2 FFT primitives`) contains 323 authored insertions (2 files: `src/infrastructure/onnx-worker/fft.ts`, `tests/infrastructure/onnx-worker/fft.test.ts`).
+
 ## Next step
 
-Commit and assess P7A-01F as a new candidate, then execute P7A-02A.
+Assess the P7A-02A candidate under the user-owned RDD switch (native review remains opt-in and was not invoked by this writer), then execute P7A-02B (Basic STFT/iSTFT, CAC, Demucs padding) on top of `fft.ts`.
