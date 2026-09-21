@@ -34,7 +34,7 @@ Stems are the bulk of what the app stores (≈101 MiB per stem per 5 minutes, `d
 
 ## Tasks
 
-- [ ] **P5-01 — Float32 WAV codec.** Route: delegated writer. Checks: golden bytes from the desktop encoder; round trip; clipping and non-finite rejection with the desktop message shape; odd lengths and mono/stereo.
+- [x] **P5-01 — Float32 WAV codec.** Route: delegated writer. Checks: golden bytes from the desktop encoder; round trip; clipping and non-finite rejection with the desktop message shape; odd lengths and mono/stereo.
 - [ ] **P5-02 — `StemStorePort` extension and `OpfsStemStore`.** Route: same writer. Checks: write/read round trip byte-identical; delete removes the directory; exists/list; quota error mapping (simulated through an injected writable that throws a `QuotaExceededError` DOMException); per-test root cleanup.
 - [ ] **P5-03 — `NavigatorStorageQuota` and the sweep integration test.** Route: same writer. Checks: arithmetic against a fake `StorageManager`; real API sanity; orphan sweep and `validateReady` through the real store.
 - [ ] **P5-04 — Close the feature.** Route: inline. Checks: five commands green; evidence here; PR(s) opened stacked on #16.
@@ -50,6 +50,14 @@ Stems are the bulk of what the app stores (≈101 MiB per stem per 5 minutes, `d
 
 - 2026-09-21 — branch and document created. Forecast ≈500 authored lines (codec ~90, store ~150, quota ~40, tests ~220).
 
+- 2026-09-21 — **P5-01 done.** `encodeFloat32Wav`, `decodeFloat32Wav`, `ClippingError` in `src/infrastructure/opfs/float32-wav.ts`.
+  - Technical shape decision: codec tests run under `tests/infrastructure/float32-wav.test.ts` (Node project's `tests/**/*.test.ts` include), since the module itself lives under `src/infrastructure/` which the Node project does not include and the codec has no browser dependency.
+  - Golden fixture generated read-only from the desktop encoder: `D:\cursos\separador-pistas\.venv\Scripts\python.exe` running `PlanarPCM(sample_rate=44100, planar=((0.5, -0.25, 0.0), (1.0, -1.0, 0.125)))` through `encode_float32_wav`; the exact Python snippet and resulting hex are recorded as a comment in the test.
+  - Clipping message shape follows the app's own established convention (`{code} {cause} {recovery}`, e.g. `separation-copy.ts`'s `CANCELLED_ERROR_DETAIL`), not desktop's Python `f"{code}: {cause} Recovery: {recovery}"` string — same `export.clipping` code and `peak` field carried on the typed error, same "reduce gain" recovery wording as `wav.py`'s `ExportError`.
+  - RED (`Cannot find module '../../src/infrastructure/opfs/float32-wav'`, 0 ran): all 5 tests in `tests/infrastructure/float32-wav.test.ts` — golden bytes, fixed header layout, mono/stereo round trip with an odd frame count, peak-above-1.0 clipping, non-finite-sample clipping.
+  - GREEN on first implementation pass (all 5), no fixes needed. `npm test` → 19 files, 180 tests (175 + 5 new). `npm run test:browser` → 5 files, 17 tests (unchanged). `npm run typecheck`, `npm run lint` both clean.
+  - Commit `<pending>` — `feat(infrastructure): add the float32 WAV codec`.
+
 ## Next step
 
-P5-01 by a delegated writer with the strict-TDD contract above.
+P5-02 — `StemStorePort` extension and `OpfsStemStore`, by the same writer.
