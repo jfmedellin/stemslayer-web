@@ -39,7 +39,8 @@ Define the application layer's ports with in-memory fakes and implement the thre
 - [x] **P3A-01 — Ports and fakes.** Route: delegated writer. Checks: every port has a doc comment naming the adapter task that implements it; fakes have their own focused tests for the behaviours the use cases rely on (lock serialisation order, hash determinism, quota arithmetic).
 - [x] **P3A-02 — `addToLibrary`.** Route: same writer. Checks: the six translated desktop scenarios above pass; quota refusal leaves the catalog untouched; the concurrent test proves one claim.
 - [x] **P3A-03 — `removeTrack` and `retryTrack`.** Route: same writer. Checks: refusal while running; stem-store failure lands on `unavailable`; retry statuses and `errorDetail` clearing; unknown id.
-- [ ] **P3A-04 — Close the feature.** Route: inline. Checks: all five commands green; this document carries the evidence; PR opened stacked on #6.
+- [x] **P3A-04 — Close the feature.** Route: inline. Checks: all five commands green; this document carries the evidence; PR opened stacked on #6.
+  - Done 2026-09-21: parent re-ran `npm run typecheck`, `npm run lint`, `npm test` (148/148), `npm run test:browser` (1/1), `npm run build`; all green. Authored diff 1,163 lines in `src` + `tests`, so the feature ships as two stacked pull requests per the user's choice: #9 `feat/p3a-ports-fakes` (commit `eddf635`, 413 lines, issue #7) on top of #6, and the use-cases PR (`b823cc0`, `ef66f11`, `cd2e390`, 750 lines, issue #8) on top of #9. Parent review note: the writer's narrow translation of the retry rule was corrected in `cd2e390` after checking `history.py:617-630`; `addToLibrary` behaviour was already right.
 
 ## Acceptance criteria
 
