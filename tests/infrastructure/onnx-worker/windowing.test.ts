@@ -131,6 +131,41 @@ describe('processPlanarWindows', () => {
     ])
   })
 
+  test('blends distinct window outputs with independently calculated triangular weights', async () => {
+    const frameCount = MODEL_WINDOW_STRIDE * 2 + 7
+    let windowNumber = 0
+    const [output] = await processPlanarWindows([new Float32Array(frameCount)], () => {
+      windowNumber += 1
+      return [new Float32Array(MODEL_SEGMENT_SAMPLES).fill(windowNumber)]
+    })
+
+    const independentWeight = (index: number): number => {
+      const half = MODEL_SEGMENT_SAMPLES / 2
+      return index < half ? (index + 1) / half : (MODEL_SEGMENT_SAMPLES - index) / half
+    }
+    const expectedBlend = (leftValue: number, rightValue: number, overlapIndex: number): number => {
+      const leftWeight = independentWeight(MODEL_WINDOW_STRIDE + overlapIndex)
+      const rightWeight = independentWeight(overlapIndex)
+      return (leftValue * leftWeight + rightValue * rightWeight) / (leftWeight + rightWeight)
+    }
+
+    const firstOverlapSamples = [0, Math.floor((MODEL_SEGMENT_SAMPLES - MODEL_WINDOW_STRIDE) / 2), 85_994]
+    for (const overlapIndex of firstOverlapSamples) {
+      expect(output[MODEL_WINDOW_STRIDE + overlapIndex]).toBeCloseTo(
+        expectedBlend(1, 2, overlapIndex),
+        6,
+      )
+    }
+
+    for (const overlapIndex of [0, 3, 6]) {
+      expect(output[MODEL_WINDOW_STRIDE * 2 + overlapIndex]).toBeCloseTo(
+        expectedBlend(2, 3, overlapIndex),
+        6,
+      )
+    }
+    expect(windowNumber).toBe(3)
+  })
+
   test.each([
     ['no channels', []],
     ['empty channels', [new Float32Array(0)]],
