@@ -37,7 +37,8 @@ Stems are the bulk of what the app stores (≈101 MiB per stem per 5 minutes, `d
 - [x] **P5-01 — Float32 WAV codec.** Route: delegated writer. Checks: golden bytes from the desktop encoder; round trip; clipping and non-finite rejection with the desktop message shape; odd lengths and mono/stereo.
 - [x] **P5-02 — `StemStorePort` extension and `OpfsStemStore`.** Route: same writer. Checks: write/read round trip byte-identical; delete removes the directory; exists/list; quota error mapping (simulated through an injected writable that throws a `QuotaExceededError` DOMException); per-test root cleanup.
 - [x] **P5-03 — `NavigatorStorageQuota` and the sweep integration test.** Route: same writer. Checks: arithmetic against a fake `StorageManager`; real API sanity; orphan sweep and `validateReady` through the real store.
-- [ ] **P5-04 — Close the feature.** Route: inline. Checks: five commands green; evidence here; PR(s) opened stacked on #16.
+- [x] **P5-04 — Close the feature.** Route: inline. Checks: five commands green; evidence here; PR(s) opened stacked on #16.
+  - Done 2026-09-21: re-ran `npm run typecheck`, `npm run lint`, `npm test` (183/183), `npm run test:browser` twice (35/35 both), `npm run build`; all green. Authored diff across the three commits: 10 files changed, 795 insertions(+), 1 deletion(-) in `src` and `tests` (`git diff --shortstat 2dfcb8c 487323f -- src tests`), against the ≈500-line forecast — over by design: the port-extension decision (dual result-key/lane-key resolution, recursive `listResultKeys`) needed more adapter and test surface than forecast, never trimmed to fit.
 
 ## Acceptance criteria
 
@@ -56,7 +57,7 @@ Stems are the bulk of what the app stores (≈101 MiB per stem per 5 minutes, `d
   - Clipping message shape follows the app's own established convention (`{code} {cause} {recovery}`, e.g. `separation-copy.ts`'s `CANCELLED_ERROR_DETAIL`), not desktop's Python `f"{code}: {cause} Recovery: {recovery}"` string — same `export.clipping` code and `peak` field carried on the typed error, same "reduce gain" recovery wording as `wav.py`'s `ExportError`.
   - RED (`Cannot find module '../../src/infrastructure/opfs/float32-wav'`, 0 ran): all 5 tests in `tests/infrastructure/float32-wav.test.ts` — golden bytes, fixed header layout, mono/stereo round trip with an odd frame count, peak-above-1.0 clipping, non-finite-sample clipping.
   - GREEN on first implementation pass (all 5), no fixes needed. `npm test` → 19 files, 180 tests (175 + 5 new). `npm run test:browser` → 5 files, 17 tests (unchanged). `npm run typecheck`, `npm run lint` both clean.
-  - Commit `57c6466` — `feat(infrastructure): add the float32 WAV codec` (242 lines: `git diff --shortstat 2dfcb8c 57c6466 -- src tests`).
+  - Commit `57c6466` — `feat(infrastructure): add the float32 WAV codec` (232 lines: `git diff --shortstat 2dfcb8c 57c6466 -- src tests`).
 
 - 2026-09-21 — **P5-02 done.** `StemStorePort` extended with `writeLane`/`readLane`; `OpfsStemStore`, `StorageQuotaExceededError` in `src/infrastructure/opfs/opfs-stem-store.ts`; `tests/fakes/in-memory-stem-store.ts` extended to match.
   - Technical shape decision: lane bytes are `Uint8Array` on both `writeLane` and `readLane` (not `Blob`) — consistent with `WebCryptoHash`'s existing `Uint8Array` convention in this codebase and avoids a Node/browser type split in the fake.
@@ -66,7 +67,7 @@ Stems are the bulk of what the app stores (≈101 MiB per stem per 5 minutes, `d
   - RED, `OpfsStemStore` (`Failed to resolve import "./opfs-stem-store"`, 0 ran): all 9 tests in `opfs-stem-store.browser.test.ts` — round trip, multiple lanes, exists (result key and lane key), listResultKeys, delete-whole-result-key, delete-single-lane-keeps-siblings, delete-unknown-is-no-op, quota mapping, root isolation.
   - One lint fix after GREEN: `readLane`'s not-found rethrow needed `{ cause: error }` for the `preserve-caught-error` rule.
   - GREEN: `npm test` → 19 files, 183 tests (175 + 5 codec + 3 fake). `npm run test:browser` → 6 files, 26 tests (17 + 9 new), run twice for stability. `npm run typecheck`, `npm run lint` both clean.
-  - Commit `1aa9a16` — `feat(infrastructure): add the OPFS stem store adapter` (399 lines: `git diff --shortstat 57c6466 1aa9a16 -- src tests`).
+  - Commit `1aa9a16` — `feat(infrastructure): add the OPFS stem store adapter` (386 insertions, 1 deletion: `git diff --shortstat 57c6466 1aa9a16 -- src tests`).
 
 - 2026-09-21 — **P5-03 done.** `NavigatorStorageQuota` in `src/infrastructure/opfs/navigator-storage-quota.ts`; sweep integration test in `src/infrastructure/opfs/startup-sweeps.browser.test.ts`.
   - Technical shape decision: `requestPersistence`/`isPersisted` are adapter-only methods beyond `QuotaPort` (which stays exactly `availableBytes()`), the same precedent as P4-02's `IndexedDbCatalog.close()` — nothing in this feature's scope wires persistence-request into a use case yet.
@@ -74,8 +75,8 @@ Stems are the bulk of what the app stores (≈101 MiB per stem per 5 minutes, `d
   - GREEN on first implementation pass (all 7), no fixes needed.
   - The sweep integration test (`startup-sweeps.browser.test.ts`) is pure composition of already-implemented pieces (P3b's `runStartupSweeps`, P5-02's `OpfsStemStore`, the `InMemoryCatalog` fake) — same as P4-03's precedent, no missing-module or behavioural RED was applicable; passed on first run, then re-run three times total (all green) since it exercises real OPFS state including nested result-key directories under a shared root.
   - GREEN: `npm test` → 19 files, 183 tests (unchanged). `npm run test:browser` → 8 files, 35 tests (26 + 7 quota + 2 sweep), run three times for stability. `npm run typecheck`, `npm run lint` both clean.
-  - Commit `<pending>` — `feat(infrastructure): add the navigator storage quota adapter and sweep integration test`.
+  - Commit `487323f` — `feat(infrastructure): add the navigator storage quota adapter and sweep integration test` (177 lines: `git diff --shortstat 1aa9a16 487323f -- src tests`).
 
 ## Next step
 
-P5-04 — close the feature: re-run all five checks, confirm evidence, open the PR stacked on #16.
+All four tasks done; three commits (`57c6466`, `1aa9a16`, `487323f`) on `feat/p5-opfs-stem-store`, not pushed. Opening the PR stacked on #16 is left to the orchestrator/user — the writer's brief for this session explicitly excluded push and PR creation.
