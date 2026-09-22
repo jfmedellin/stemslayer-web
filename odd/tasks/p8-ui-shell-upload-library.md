@@ -1,0 +1,88 @@
+# P8 — UI: shell, upload page, library page
+
+Status: opened 2026-09-22. Delivery strategy: `ask-on-risk`; chain strategy: `feature-branch-chain` (continuing P7a/P7b's convention). Developed locally on `feat/p7b-onnx-worker` (has P1..P7b); publication base decided at closure, same reasoning as P7a/P7b.
+
+## Objective
+
+Build the real application shell (left navigation: Upload / Library / Mixer / Export, storage meter) and its first two destinations: the Upload page (drop zone, file card, profile choice, "before you start" strip, primary action wired to `addToLibrary`) and the Library page (dense track list with per-row status, search, sort, cancel/retry/remove wired to `separate`/`retryTrack`/`removeTrack`). Replaces the P1 placeholder shell in `src/ui/App.tsx` with the real product surface.
+
+## Problem / why
+
+P1..P7b built every port and use case this needs (`addToLibrary`, `separate`/`SeparationQueue`, `retryTrack`, `removeTrack`, `runStartupSweeps`, `CatalogPort`, `QuotaPort`, `ModelStorePort`) but there is still no UI calling any of them — `src/ui/App.tsx` is the untouched P1 "foundation ready" placeholder. P8 is the phase that makes the app usable end to end for its first two destinations, matching `docs/decisions/phase-2-plan.md`'s P8a/P8b split and the redrawn Stitch design reference (`docs/decisions/design-reference.md` section 5, screens `1d2398e695504d59be8edca762a85bcd` Upload and `45c441aa237c4c448a7fa020c5320400` Library, fetched and read directly for this document).
+
+## Scope
+
+- Expand `src/ui/tokens.css` from the P1 partial token set to the full Dragon Atelier system in `design-reference.md` section 1: stem colors including the two Rock guitar tints (centre `#c8b38d`, sides `#d6c5a0`, other/olive `#9fa685`), rust `#c4746e`, the full type scale (headline-xl/lg/md, body-lg/md/sm, telemetry-lg/md/sm, label-caps 9px mono uppercase), elevation/overlay rules, meter segment colors.
+- App shell: left nav with four destinations (Upload, Library, Mixer, Export — Mixer/Export are navigation targets only in P8, per Out of scope), storage meter ("Browser storage X GB / Y GB · Results live in this browser only" via `QuotaPort`), header WebGPU/WASM pill.
+- **P8A — Upload page.** Single-file drop zone + browse fallback (drag-and-drop and `<input type="file">`); extra dropped files are ignored (decided in `phase-2-plan.md`'s own P8a check), with a brief inline/toast message naming the single-file limit (exact copy is this task's own call, not fixed elsewhere). File card once a file is loaded: name, format, bit depth, duration, size, "Change file". Two profile cards, Basic (4 stems) and Rock (6 stems, default selected), each with its stem list and `ModelStorePort.getFootprint()`-driven cached/size readout, copy matching the fetched Stitch screen (`Komorebi_Master_Mix_48k.wav` is placeholder-song naming in the mock only — real files use the uploaded name). "Before you start" strip: Engine (WebGPU/WASM, from `OnnxSessionManager`'s own provider detection — reuse its `navigator.gpu` check, do not duplicate provider-selection logic), Estimate (~25 s Rock / ~36 s Basic for a 4-minute song per `spike-s2.md`, scaled by the loaded file's duration), Storage (`QuotaPort.availableBytes()`), Models (cached/download-size readout per profile). Primary action "Separate · {Profile} · {N} stems", disabled until a file is loaded, calls `addToLibrary` then routes to Library on `claimed`/`reused`/`awaiting`/`adopted`; on `quota-refused` shows the forecast/available bytes inline rather than navigating.
+- **P8B — Library page.** Dense row list from `CatalogPort.listAll()`. Search box (title/artist substring, client-side). Three sorts only — newest, title, duration — no status/profile filters (`feature-parity.md` line 40). One row per status, copy matching the fetched Stitch screen exactly: `ready` ("Open in mixer" navigates only, no mixer UI built here), `processing` ("Separating · window N of M · P%" from `separate()`'s `onProgress` `{phase:'processing', window, totalWindows}`, "Cancel" button), `preparing`/model-download (`{phase:'preparing', detail}` progress, "Downloading {Profile} model · X of Y MiB", "Cancel"), `failed` (reason text, "Retry" wired to `retryTrack`, "Remove" wired to `removeTrack`), `interrupted` ("Cancelled before it finished.", "Retry"/"Remove"), `unavailable` ("Stems were removed by the browser. Separate again from the original file.", "Retry"/"Remove"). Cancel shows a confirm dialog first, exact copy from the fetched Stitch screen: "Cancel this separation? This stops the job right now. The work in progress is lost and cannot be resumed." / "Keep running" / "Cancel job". Remove shows a guard (this task's own call for exact copy — a destructive-action confirm, following the same dialog pattern as cancel). Call `runStartupSweeps()` once on Library mount (recovers unfinished jobs, invalidates stale `ready` rows, removes orphans) before the first `listAll()` read.
+
+## Out of scope
+
+- Mixer and Export pages themselves, and any `AudioEnginePort` wiring — P9/P10 own them (`phase-2-plan.md`). P8 only navigates *to* a mixer/export destination from a library row ("Open in mixer" / "Export"); it renders nothing there yet beyond a route target. Note: `audio-engine-port.ts`'s own doc comment says "Implemented by P8" — that comment is stale against `phase-2-plan.md`'s P9a ownership; do not let it pull mixer-adapter work into this phase. Flagged separately as a documentation fix, not a P8 task.
+- Pixel-perfect visual polish and accessibility audit pass — P11 owns that gate explicitly (`phase-2-plan.md`). P8 implements structure, real copy, real states, and real port wiring against the already-adopted token system and the fetched Stitch reference; it does not chase pixel fidelity against the mockup's exact spacing/typography beyond what the token system already encodes.
+- Routing library choice beyond what four static destinations need — no deep-linking, no URL-driven state is required by any decided product behavior; a minimal in-app view switch is sufficient unless a real need surfaces.
+- Mobile layouts — desktop-first per `architecture.md`; the Stitch mobile screens are explicitly out of scope for phase 2 (`design-reference.md` section 5, "Not redrawn").
+
+## Constraints and decisions
+
+- Artifacts in English. Conventional Commits, scope `ui`. No AI attribution lines. One commit per task with its tests and the tracker update, matching P7a/P7b's rhythm (source+test commit, then a separate `docs(odd)` tracker commit).
+- TDD: strict, on. Runner: `npm test` for pure logic (formatters, sort/search, status-derivation helpers) and component tests that don't need a real browser; `npm run test:browser` for anything rendering real DOM interaction (drop zone drag/drop, file input, dialogs) — matching the existing `App.browser.test.tsx` precedent. Observed RED before every implementation.
+- Layering: `src/ui/` may import `application`/`domain` types and call application use cases/ports; it owns its own presentation-only state. Follow container/presentational split and atomic-design grouping (atoms/molecules/organisms/containers or an equivalent this project already leans toward) rather than one flat component per page — confirm the project's actual existing convention (there is none yet beyond `App.tsx`; P8A sets the precedent other UI phases will follow). `npm run lint` enforces the existing architecture boundaries.
+- Size heuristic ~400 authored lines per task, advisory, matching `phase-2-plan.md`'s own P8a/P8b split. If either audits out larger (e.g. token-system expansion turns out to be its own coherent unit), split further the same way P7B-05 did — expand with explicit user authorization, never silently.
+- RDD: same protocol as P7a/P7b — after each commit, `gentle-ai review assess --base-ref <last acknowledged boundary> --committed-only --json`.
+- Checks: `npm run typecheck`, `npm run lint`, `npm test`, `npm run test:browser`, `npm run build`.
+- Open, low-risk defaults this task is making explicitly rather than blocking on: (1) extra-dropped-file rejection copy is a brief inline message, not specified elsewhere — reasonable wording, not a hard product commitment; (2) remove-track confirm dialog copy follows the cancel dialog's pattern since no separate copy is fixed anywhere. Both are cheap to change later if the user disagrees.
+
+## Tasks
+
+- [ ] **P8A — App shell + Upload page.**
+  - Route: delegated direct (writer). Trigger: 2+ non-trivial new files (shell/nav component, drop zone, file card, profile cards, before-you-start strip, token expansion) plus tests.
+  - Dependency: none beyond existing P1..P7b ports/use cases.
+  - Scope: see Scope section above (shell/nav + tokens.css expansion + everything under "P8A — Upload page").
+  - Acceptance: a browser test drops a file and reaches the profile-choice/primary-action state; dropping extra files leaves only the first loaded and shows the ignored-files message; the primary action calls `addToLibrary` with the selected profile and routes correctly per its result `decision`; `quota-refused` is shown inline, not routed away from.
+  - Strict TDD: add the browser test first (drop-to-profile-choice flow), record RED, then GREEN/REFACTOR. Run typecheck/lint and the full browser suite.
+  - Rollback boundary: revert `src/ui/App.tsx`'s replacement, the new shell/upload components, tokens.css expansion, and this task's evidence; P1..P7b remain fully intact (nothing in `application`/`domain`/`infrastructure` changes).
+  - Forecast: ~400 authored lines (phase-2-plan.md's own estimate); expect to exceed given the token-system expansion — do not code-golf tests or copy to fit.
+
+- [ ] **P8B — Library page.**
+  - Route: delegated direct (writer). Trigger: 2+ non-trivial new files (list container, row component per status, search/sort controls, cancel/remove dialogs) plus tests.
+  - Dependency: P8A's shell/nav (Library becomes a real reachable destination).
+  - Scope: see Scope section above, "P8B — Library page".
+  - Acceptance: `runStartupSweeps()` runs once on mount before the first list read; search filters client-side; the three sorts reorder correctly; each of the six row statuses renders its exact designed copy and actions; cancel shows the exact confirm-dialog copy fetched from the Stitch screen and only cancels on "Cancel job"; retry/remove call `retryTrack`/`removeTrack` and reflect their result (including `retryTrack`'s `identity-owned` refusal and `removeTrack`'s `not-found`/`in-progress`/`unavailable` refusals).
+  - Strict TDD: add the browser test first (render all six statuses, drive one cancel-confirm flow end to end), record RED, then GREEN/REFACTOR. Run typecheck/lint and the full browser suite.
+  - Rollback boundary: revert the Library route/components/tests and this task's evidence; P8A's shell and Upload page remain intact and usable on their own.
+  - Forecast: ~400 authored lines (phase-2-plan.md's own estimate).
+
+- [ ] **P8C — Close P8.**
+  - Route: parent-owned commits, assessments, final checks, and Engram mirror update.
+  - Evidence: strict-TDD history, exact checks, authored counts, rollback boundaries, commit identities, and native outcomes, matching P7a/P7b's closure entries.
+
+## Acceptance criteria
+
+- [ ] The P1 placeholder shell is fully replaced; `src/ui/App.tsx` (or its successor) renders the real four-destination nav and storage meter.
+- [ ] Upload: single-file drop zone + browse, file card, two profile cards (Basic default-unselected/Rock default-selected per the design), before-you-start strip with real values (no fake DAW telemetry), primary action wired to `addToLibrary` with correct routing per `decision`.
+- [ ] Library: search, three sorts only, all six row statuses render designed copy/actions, cancel confirm dialog matches fetched copy exactly, retry/remove wired to their use cases including refusal reasons, `runStartupSweeps()` runs on mount before first read.
+- [ ] Mixer/Export are reachable as navigation targets only; no `AudioEnginePort` wiring exists in this phase.
+- [ ] `tokens.css` carries the full Dragon Atelier token set from `design-reference.md` section 1, including the two Rock guitar tints.
+- [ ] Focused and full checks pass with observed strict-TDD evidence.
+
+## Forecast and delivery
+
+Forecast: P8A ~400+ lines (token expansion likely pushes it over); P8B ~400 lines; P8C closure only. Two independently reviewable work units matching `phase-2-plan.md`'s own P8a/P8b split. Expect a chained sequence of pull requests at closure, same as P7a/P7b. The 400-line figure is advisory, not a target to hit by cutting tests, copy, or states.
+
+## Applicable checks
+
+- P8A focused: its own `*.browser.test.tsx` (drop-to-primary-action flow) plus any pure-logic unit tests (formatters, provider/estimate derivation).
+- P8B focused: its own `*.browser.test.tsx` (all six statuses, one cancel-confirm flow) plus pure-logic unit tests (search/sort).
+- Closure: `npm test`, `npm run lint`, `npm run typecheck`, `npm run test:browser`, and `npm run build`.
+- Review focus: exact port/use-case contract adherence (`addToLibrary`'s five `decision` outcomes, `separate()`'s progress phases, `retryTrack`/`removeTrack`'s refusal reasons), no fabricated DAW telemetry or filters the product already rejected (section 3 of `design-reference.md`), accessibility basics (labelled regions, dialog focus, keyboard-operable primary flows) even though full a11y polish is P11's job.
+
+## Progress / evidence
+
+- 2026-09-22 — Feature document created on `feat/p7b-onnx-worker` (has P1..P7b). Design reference gathered directly rather than trusted from memory: fetched both redrawn Stitch screens (Upload `1d2398e695504d59be8edca762a85bcd`, Library `45c441aa237c4c448a7fa020c5320400`) via the Stitch MCP and read their generated HTML structure/copy in full — the exact strings recorded in Scope above (drop zone text, file card fields, profile card copy, before-you-start labels, primary button format, all six library row statuses, and the cancel-confirm dialog copy) come from that read, not from `design-reference.md`'s summary alone. Explored existing state first (`src/ui/` is still the P1 placeholder; `src/application/ports/` has 8 working ports; `addToLibrary`/`separate`/`retryTrack`/`removeTrack`/`runStartupSweeps` are implemented, not stubs) via a delegated read-only mapping pass before writing this document.
+- 2026-09-22 — Four open items surfaced during exploration were resolved without blocking on the user: (1) cancellation dialog copy — resolved, the fetched Library screen has the exact designed copy, recorded in Scope; (2) multi-file-drop rejection copy — no fixed copy exists anywhere, left as this task's own low-risk call, documented in Constraints; (3) `audio-engine-port.ts`'s stale "Implemented by P8" doc comment — resolved by treating `phase-2-plan.md` as authoritative (P9 owns it), flagged as a separate tiny doc-fix follow-up, not a P8 task; (4) pixel-fidelity vs. functional-first — resolved by Constraints' explicit statement that P8 implements structure/copy/states/wiring and P11 owns visual polish.
+
+## Next step
+
+Start P8A (app shell + Upload page): expand `tokens.css` to the full token set first (everything else depends on it), then build the shell/nav, then the Upload page components, TDD throughout. Route: delegated direct writer, per the Writer trigger (2+ non-trivial files).
