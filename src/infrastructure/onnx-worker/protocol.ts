@@ -1,89 +1,129 @@
-/**
- * Worker message protocol shared by the main-thread `OnnxWorkerInference`
- * adapter and the ONNX Worker script (P7B-05). Pure discriminated-union
- * types plus a shallow type guard — no `onnxruntime-web`, DOM, or Worker
- * global dependency — so this module runs in the Node test project as well
- * as the browser.
- */
-
-/**
- * Sent once, main thread -> Worker: starts a separation job.
- *
- * `planarChannels` is already-decoded planar audio for the whole track, one
- * `Float32Array` per channel, ready to hand to P7a's `processPlanarWindows`
- * inside the Worker. This protocol never decodes audio itself: turning
- * `InferenceJob.source` bytes (`application/ports/inference-port.ts`) into
- * this planar shape happens in whatever code constructs this message, not
- * here.
- */
+/** Transferable main-thread -> inference Worker job. */
 export interface WorkerJobMessage {
   readonly kind: 'job'
-  /** `InferenceJob.trackId`; echoed back on every progress/result/error message for correlation. */
   readonly trackId: string
-  /**
-   * `InferenceJob.profile.profileId` only — the Worker resolves its ONNX
-   * session and `PlanarWindowProcessor` from this id and never receives the
-   * full `StemProfile` (lane display metadata stays on the main thread/UI).
-   */
-  readonly profileId: string
-  /** `InferenceJob.resultKey`, forwarded to `StemStorePort.writeLane` inside the Worker. */
   readonly resultKey: string
-  /** Whole-track planar audio, already decoded; see the interface comment above. */
-  readonly planarChannels: readonly Float32Array[]
+  readonly profileId: string
+  readonly sampleRate: number
+  readonly modelBytes: Uint8Array
+  readonly planarChannels: readonly [Float32Array, Float32Array]
 }
 
-/** Sent repeatedly, Worker -> main thread: one `processPlanarWindows` window completed. */
 export interface WorkerProgressMessage {
   readonly kind: 'progress'
   readonly trackId: string
-  /** Matches `InferenceProgress` (`application/ports/inference-port.ts`) exactly. */
+  readonly resultKey: string
   readonly window: number
   readonly totalWindows: number
 }
 
-/** Sent once on success, Worker -> main thread: every stem lane was written. */
+export interface WorkerResultLane {
+  readonly laneId: string
+  readonly channels: readonly [Float32Array, Float32Array]
+}
+
 export interface WorkerResultMessage {
   readonly kind: 'result'
   readonly trackId: string
-  /** The `StemStorePort.writeLane` keys the Worker wrote; resolves `InferenceHandle.result`. */
-  readonly laneKeys: readonly string[]
+  readonly resultKey: string
+  readonly sampleRate: number
+  readonly lanes: readonly WorkerResultLane[]
 }
 
-/**
- * Sent once on failure or cancellation, Worker -> main thread.
- *
- * `cancelled` distinguishes a `terminate()`-triggered abort from any other
- * failure: the main-thread adapter rejects the pending
- * `InferenceHandle.result` with `InferenceCancelled`
- * (`application/ports/inference-port.ts`) only when `cancelled` is `true`,
- * and with a plain `Error` otherwise.
- */
 export interface WorkerErrorMessage {
   readonly kind: 'error'
   readonly trackId: string
+  readonly resultKey: string
   readonly message: string
   readonly cancelled: boolean
 }
 
-/** Every message the Worker ever posts back to the main thread. */
 export type WorkerOutboundMessage = WorkerProgressMessage | WorkerResultMessage | WorkerErrorMessage
-
-/** Every message either side of the Worker boundary can send. */
 export type WorkerMessage = WorkerJobMessage | WorkerOutboundMessage
 
-const WORKER_MESSAGE_KINDS: ReadonlySet<WorkerMessage['kind']> = new Set(['job', 'progress', 'result', 'error'])
+type UnknownRecord = Record<string, unknown>
 
-/**
- * Shallow discriminant check: confirms `value` is a non-null object with a
- * recognized `kind`. It does not validate the remaining fields for that
- * kind — deep payload validation belongs to the Worker's own message
- * handler (P7B-05), which owns the trust boundary with a real `postMessage`
- * origin.
- */
+function record(value: unknown): UnknownRecord | undefined {
+  return typeof value === 'object' && value !== null && !Array.isArray(value)
+    ? value as UnknownRecord
+    : undefined
+}
+
+function nonEmptyString(value: unknown): value is string {
+  return typeof value === 'string' && value.length > 0
+}
+
+function positiveInteger(value: unknown): value is number {
+  return typeof value === 'number' && Number.isSafeInteger(value) && value > 0
+}
+
+function finiteFloat32(value: unknown): value is Float32Array {
+  return value instanceof Float32Array && value.length > 0 && value.every(Number.isFinite)
+}
+
+function stereo(value: unknown): value is readonly [Float32Array, Float32Array] {
+  return Array.isArray(value)
+    && value.length === 2
+    && finiteFloat32(value[0])
+    && finiteFloat32(value[1])
+    && value[0].length === value[1].length
+}
+
+function correlation(message: UnknownRecord): boolean {
+  return nonEmptyString(message.trackId) && nonEmptyString(message.resultKey)
+}
+
+export function isWorkerJobMessage(value: unknown): value is WorkerJobMessage {
+  const message = record(value)
+  return message !== undefined
+    && message.kind === 'job'
+    && correlation(message)
+    && nonEmptyString(message.profileId)
+    && positiveInteger(message.sampleRate)
+    && message.modelBytes instanceof Uint8Array
+    && message.modelBytes.byteLength > 0
+    && stereo(message.planarChannels)
+}
+
+function isProgress(message: UnknownRecord): boolean {
+  return message.kind === 'progress'
+    && correlation(message)
+    && positiveInteger(message.window)
+    && positiveInteger(message.totalWindows)
+    && message.window <= message.totalWindows
+}
+
+function isResultLane(value: unknown): value is WorkerResultLane {
+  const lane = record(value)
+  return lane !== undefined && nonEmptyString(lane.laneId) && stereo(lane.channels)
+}
+
+function isResult(message: UnknownRecord): boolean {
+  if (
+    message.kind !== 'result'
+    || !correlation(message)
+    || !positiveInteger(message.sampleRate)
+    || !Array.isArray(message.lanes)
+    || message.lanes.length === 0
+    || !message.lanes.every(isResultLane)
+  ) return false
+  const ids = message.lanes.map(({ laneId }) => laneId)
+  return new Set(ids).size === ids.length
+}
+
+function isError(message: UnknownRecord): boolean {
+  return message.kind === 'error'
+    && correlation(message)
+    && nonEmptyString(message.message)
+    && typeof message.cancelled === 'boolean'
+}
+
+export function isWorkerOutboundMessage(value: unknown): value is WorkerOutboundMessage {
+  const message = record(value)
+  return message !== undefined && (isProgress(message) || isResult(message) || isError(message))
+}
+
+/** Deep-validates every field crossing the Worker trust boundary. */
 export function isWorkerMessage(value: unknown): value is WorkerMessage {
-  if (typeof value !== 'object' || value === null || Array.isArray(value)) {
-    return false
-  }
-  const kind = (value as { kind?: unknown }).kind
-  return typeof kind === 'string' && WORKER_MESSAGE_KINDS.has(kind as WorkerMessage['kind'])
+  return isWorkerJobMessage(value) || isWorkerOutboundMessage(value)
 }
