@@ -59,8 +59,8 @@ function libraryDepsOf(testDeps: FakeAppDependencies): LibraryPageDeps {
  * the shared queue's `progressHub` so a real enqueued job's live progress
  * re-renders the page, exactly as it would from the real composition root.
  */
-function renderLibrary(testDeps: FakeAppDependencies): { mixerRequests: number } {
-  const state = { mixerRequests: 0 }
+function renderLibrary(testDeps: FakeAppDependencies): { mixerRequests: number; exportedTrackId: string | null } {
+  const state: { mixerRequests: number; exportedTrackId: string | null } = { mixerRequests: 0, exportedTrackId: null }
   let progressByTrackId: Record<string, SeparateProgressEvent> = {}
   container = document.body.appendChild(document.createElement('div'))
   root = createRoot(container)
@@ -72,6 +72,7 @@ function renderLibrary(testDeps: FakeAppDependencies): { mixerRequests: number }
         queue={testDeps.deps.separationQueue}
         progressByTrackId={progressByTrackId}
         onOpenInMixer={() => { state.mixerRequests += 1 }}
+        onExport={(trackId) => { state.exportedTrackId = trackId }}
         startupSweepGuard={testDeps.deps.startupSweepGuard}
       />,
     ))
@@ -120,6 +121,7 @@ test('renders all six row statuses with their designed copy and actions', async 
   const ready = rowFor('ready-1')
   expect(ready?.querySelector('.track-row-status')?.textContent).toBe('Ready')
   expect(ready?.querySelector('.track-row-open-mixer')).not.toBeNull()
+  expect(ready?.querySelector('.track-row-export')).not.toBeNull()
   expect(ready?.querySelector('.track-row-cancel')).toBeNull()
   expect(ready?.querySelector('.track-row-retry')).toBeNull()
 
@@ -360,4 +362,16 @@ test('"Open in mixer" navigates only, no mixer UI rendered here', async () => {
 
   clickButton(document, '.track-row-open-mixer')
   expect(state.mixerRequests).toBe(1)
+})
+
+test('"Export" carries the exact clicked row\'s trackId, not just a navigation signal', async () => {
+  const testDeps = await buildSettledDeps()
+  await testDeps.catalog.insert(baseTrack({ trackId: 'ready-a', status: 'ready' }))
+  await testDeps.catalog.insert(baseTrack({ trackId: 'ready-b', status: 'ready' }))
+
+  const state = renderLibrary(testDeps)
+  await waitFor(() => document.querySelectorAll('.track-row').length === 2)
+
+  clickButton(rowFor('ready-b')!, '.track-row-export')
+  expect(state.exportedTrackId).toBe('ready-b')
 })

@@ -7,14 +7,15 @@ export interface TrackHeaderProps {
   readonly profileDisplayName: string
   readonly laneCount: number
   readonly onBackToLibrary: () => void
-  readonly onExport: () => void
+  readonly onExport: (trackId: string) => void
 }
 
 /**
  * Mixer track header: title/artist/duration/profile/lane-count/"separated …
  * ago" (from `track.createdAtUtc`, the only timestamp `Track` carries),
  * "Back to library", and "Export stems" (navigates to the Export
- * destination only — Export itself is P10, out of scope here).
+ * destination for this exact track — P10A fix: `onExport` now carries the
+ * `trackId`, the same class of gap P9B already fixed for "Open in mixer").
  */
 export function TrackHeader({ track, profileDisplayName, laneCount, onBackToLibrary, onExport }: TrackHeaderProps) {
   return (
@@ -32,7 +33,7 @@ export function TrackHeader({ track, profileDisplayName, laneCount, onBackToLibr
         </p>
       </div>
 
-      <button type="button" className="mixer-export-stems" onClick={onExport}>
+      <button type="button" className="mixer-export-stems" onClick={() => onExport(track.trackId)}>
         Export stems
       </button>
     </header>

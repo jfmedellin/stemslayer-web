@@ -70,8 +70,15 @@ async function buildDeps(track: Track, options: { absentGuitarCenter?: boolean }
   return { deps: { catalog, stemStore, audioEngine }, catalog, stemStore, audioEngine }
 }
 
-function renderMixer(testDeps: TestDeps, trackId = 'track-1'): { onBack: number; onExport: number } {
-  const calls = { onBack: 0, onExport: 0 }
+function renderMixer(
+  testDeps: TestDeps,
+  trackId = 'track-1',
+): { onBack: number; onExport: number; lastExportedTrackId: string | null } {
+  const calls: { onBack: number; onExport: number; lastExportedTrackId: string | null } = {
+    onBack: 0,
+    onExport: 0,
+    lastExportedTrackId: null,
+  }
   const container = document.body.appendChild(document.createElement('div'))
   root = createRoot(container)
   flushSync(() => root.render(
@@ -79,7 +86,7 @@ function renderMixer(testDeps: TestDeps, trackId = 'track-1'): { onBack: number;
       deps={testDeps.deps}
       trackId={trackId}
       onBackToLibrary={() => { calls.onBack += 1 }}
-      onExport={() => { calls.onExport += 1 }}
+      onExport={(exportedTrackId) => { calls.onExport += 1; calls.lastExportedTrackId = exportedTrackId }}
     />,
   ))
   return calls
@@ -281,5 +288,9 @@ test('Back to library and Export stems only navigate; they never dispose the sha
 
   expect(calls.onBack).toBe(1)
   expect(calls.onExport).toBe(1)
+  // Proves the trackId-threading fix, not just that a click was observed:
+  // `TrackHeader`'s "Export stems" button now carries the exact loaded
+  // track's id all the way out through `MixerPage`'s own `onExport` prop.
+  expect(calls.lastExportedTrackId).toBe('track-1')
   expect(testDeps.audioEngine.disposed).toBe(false)
 })

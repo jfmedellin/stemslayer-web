@@ -25,7 +25,7 @@ export interface MixerPageProps {
   readonly deps: MixerPageDeps
   readonly trackId: string
   readonly onBackToLibrary: () => void
-  readonly onExport: () => void
+  readonly onExport: (trackId: string) => void
 }
 
 const DEFAULT_LANE_STATE: LaneRowState = { gainPercent: 100, muted: false, solo: false }

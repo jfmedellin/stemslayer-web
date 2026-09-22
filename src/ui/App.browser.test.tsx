@@ -148,3 +148,100 @@ test('"Open in mixer" from a specific Library row opens the mixer with that exac
   expect(document.querySelector('.mixer-track-artist')?.textContent).toBe('Artist B')
   expect(document.querySelector('.mixer-track-title')?.textContent).not.toBe('First Song')
 })
+
+// Proves this task's own trackId-threading fix end to end: before it,
+// neither `TrackHeader`'s "Export stems" nor Library's (new) "Export"
+// action carried a trackId anywhere, so Export had no way to know which
+// track to show (the same bug class P9B's own `onOpenInMixer` fix and
+// P9C's `R3-mixer-stale-load-race` finding already caught elsewhere).
+test('Library\'s "Export" action opens the Export page for that exact row\'s track', async () => {
+  const testDeps = buildFakeAppDependencies({ availableBytes: 5_000_000_000 })
+  await settleStartupSweep(testDeps)
+
+  const trackA = readyTrack({ trackId: 'track-a', title: 'First Song', artist: 'Artist A' })
+  const trackB = readyTrack({ trackId: 'track-b', title: 'Second Song', artist: 'Artist B' })
+  await testDeps.catalog.insert(trackA)
+  await testDeps.catalog.insert(trackB)
+  await seedStems(testDeps, trackA)
+  await seedStems(testDeps, trackB)
+
+  root = createRoot(document.body.appendChild(document.createElement('div')))
+  flushSync(() => root.render(<App dependencies={testDeps.deps} />))
+
+  clickNav('Library')
+  await new Promise((resolve) => setTimeout(resolve, 50))
+
+  const rowBExport = document.querySelector('.track-row[data-track-id="track-b"] .track-row-export')
+  if (rowBExport === null) throw new Error('track-b export button not found')
+  flushSync(() => (rowBExport as HTMLButtonElement).click())
+
+  await new Promise((resolve, reject) => {
+    const start = Date.now()
+    const poll = setInterval(() => {
+      const title = document.querySelector('.export-track-title')?.textContent
+      if (title?.startsWith('Second Song') === true) {
+        clearInterval(poll)
+        resolve(undefined)
+      } else if (Date.now() - start > 2000) {
+        clearInterval(poll)
+        reject(new Error(`timed out waiting for export title, last seen: ${title}`))
+      }
+    }, 10)
+  })
+
+  expect(document.querySelector('.export-track-title')?.textContent).not.toContain('First Song')
+})
+
+// Same proof from Mixer's own entry point: "Export stems" must carry the
+// track actually loaded in the mixer, not a stale or absent id.
+test('Mixer\'s "Export stems" opens the Export page for the track that is actually loaded', async () => {
+  const testDeps = buildFakeAppDependencies({ availableBytes: 5_000_000_000 })
+  await settleStartupSweep(testDeps)
+
+  const track = readyTrack({ trackId: 'track-only', title: 'Only Song', artist: 'Solo Artist' })
+  await testDeps.catalog.insert(track)
+  await seedStems(testDeps, track)
+
+  root = createRoot(document.body.appendChild(document.createElement('div')))
+  flushSync(() => root.render(<App dependencies={testDeps.deps} />))
+
+  clickNav('Library')
+  await new Promise((resolve) => setTimeout(resolve, 50))
+  const openMixer = document.querySelector('.track-row[data-track-id="track-only"] .track-row-open-mixer')
+  if (openMixer === null) throw new Error('open-in-mixer button not found')
+  flushSync(() => (openMixer as HTMLButtonElement).click())
+
+  await new Promise((resolve, reject) => {
+    const start = Date.now()
+    const poll = setInterval(() => {
+      const title = document.querySelector('.mixer-track-title')?.textContent
+      if (title === 'Only Song') {
+        clearInterval(poll)
+        resolve(undefined)
+      } else if (Date.now() - start > 2000) {
+        clearInterval(poll)
+        reject(new Error(`timed out waiting for mixer title, last seen: ${title}`))
+      }
+    }, 10)
+  })
+
+  const exportButton = document.querySelector('.mixer-export-stems')
+  if (exportButton === null) throw new Error('export-stems button not found')
+  flushSync(() => (exportButton as HTMLButtonElement).click())
+
+  await new Promise((resolve, reject) => {
+    const start = Date.now()
+    const poll = setInterval(() => {
+      const title = document.querySelector('.export-track-title')?.textContent
+      if (title?.startsWith('Only Song') === true) {
+        clearInterval(poll)
+        resolve(undefined)
+      } else if (Date.now() - start > 2000) {
+        clearInterval(poll)
+        reject(new Error(`timed out waiting for export title, last seen: ${title}`))
+      }
+    }, 10)
+  })
+
+  expect(document.querySelector('.export-track-title')?.textContent).toContain('Solo Artist')
+})

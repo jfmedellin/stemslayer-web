@@ -20,6 +20,7 @@ export interface TrackRowProps {
   readonly onRetryFileChosen: (file: File) => void
   readonly onRetryCancelled: () => void
   readonly onOpenInMixer: (trackId: string) => void
+  readonly onExport: (trackId: string) => void
 }
 
 function statusLabel(track: Track, progress: SeparateProgressEvent | undefined): string {
@@ -51,6 +52,7 @@ export function TrackRow({
   onRetryFileChosen,
   onRetryCancelled,
   onOpenInMixer,
+  onExport,
 }: TrackRowProps) {
   const retryable = track.status === 'failed' || track.status === 'interrupted' || track.status === 'unavailable'
   const cancellable = track.status === 'preparing' || track.status === 'processing'
@@ -66,9 +68,14 @@ export function TrackRow({
 
       <div className="track-row-actions">
         {track.status === 'ready' && (
-          <button type="button" className="track-row-open-mixer" onClick={() => onOpenInMixer(track.trackId)}>
-            Open in mixer
-          </button>
+          <>
+            <button type="button" className="track-row-open-mixer" onClick={() => onOpenInMixer(track.trackId)}>
+              Open in mixer
+            </button>
+            <button type="button" className="track-row-export" onClick={() => onExport(track.trackId)}>
+              Export
+            </button>
+          </>
         )}
         {cancellable && (
           <button type="button" className="track-row-cancel" onClick={onCancelRequested}>

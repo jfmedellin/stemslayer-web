@@ -1,6 +1,7 @@
 import { useEffect, useMemo, useState } from 'react'
 import type { SeparateProgressEvent } from '../application/separate'
 import { createAppDependencies, type AppDependencies } from './app-dependencies'
+import { ExportPage, type ExportPageDeps } from './export/ExportPage'
 import { LibraryPage, type LibraryPageDeps } from './library/LibraryPage'
 import { MixerPage, type MixerPageDeps } from './mixer/MixerPage'
 import { AppShell, type NavDestination } from './shell/AppShell'
@@ -37,6 +38,10 @@ export function App({ dependencies }: AppProps) {
   // way from `TrackRow` through `LibraryPage` to here, instead of only
   // navigating to the Mixer destination with no track selected).
   const [mixerTrackId, setMixerTrackId] = useState<string | null>(null)
+  // The track Export was last opened for; `null` until Mixer's "Export
+  // stems" or Library's "Export" action sets one (this task's own
+  // trackId-threading fix, mirroring `mixerTrackId`'s P9B pattern exactly).
+  const [exportTrackId, setExportTrackId] = useState<string | null>(null)
 
   useEffect(() => {
     let cancelled = false
@@ -67,6 +72,11 @@ export function App({ dependencies }: AppProps) {
     audioEngine: deps.audioEngine,
   }), [deps])
 
+  const exportDeps = useMemo<ExportPageDeps>(() => ({
+    catalog: deps.addToLibraryDeps.catalog,
+    stemStore: deps.stemStore,
+  }), [deps])
+
   const engineProvider = detectEngineProvider(deps.navigatorRef)
 
   return (
@@ -88,6 +98,10 @@ export function App({ dependencies }: AppProps) {
             setMixerTrackId(trackId)
             setDestination('mixer')
           }}
+          onExport={(trackId) => {
+            setExportTrackId(trackId)
+            setDestination('export')
+          }}
           startupSweepGuard={deps.startupSweepGuard}
         />
       )}
@@ -99,11 +113,32 @@ export function App({ dependencies }: AppProps) {
               deps={mixerDeps}
               trackId={mixerTrackId}
               onBackToLibrary={() => setDestination('library')}
-              onExport={() => setDestination('export')}
+              onExport={(trackId) => {
+                setExportTrackId(trackId)
+                setDestination('export')
+              }}
             />
           )
       )}
-      {destination === 'export' && <PlaceholderPane title="Export" />}
+      {destination === 'export' && (
+        exportTrackId === null
+          ? <PlaceholderPane title="Export" />
+          : (
+            <ExportPage
+              deps={exportDeps}
+              trackId={exportTrackId}
+              onBackToMixer={() => {
+                // "Back to mixer" always opens the mixer for the track
+                // currently being exported, regardless of which entry point
+                // (Mixer's "Export stems" or Library's "Export") got here —
+                // otherwise a Library-originated Export would land on a
+                // stale/absent `mixerTrackId` and show the Mixer placeholder.
+                setMixerTrackId(exportTrackId)
+                setDestination('mixer')
+              }}
+            />
+          )
+      )}
     </AppShell>
   )
 }

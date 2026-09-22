@@ -28,6 +28,7 @@ export interface LibraryPageProps {
   readonly queue: SeparationQueue
   readonly progressByTrackId: Readonly<Record<string, SeparateProgressEvent>>
   readonly onOpenInMixer: (trackId: string) => void
+  readonly onExport: (trackId: string) => void
   /** Session-scoped: ensures the startup sweep runs exactly once, even across repeated Library mounts (`app-dependencies.ts`). */
   readonly startupSweepGuard: StartupSweepGuard
 }
@@ -39,7 +40,14 @@ export interface LibraryPageProps {
 const REFRESH_INTERVAL_MS = 200
 
 /** Container for the Library destination: search/sort, live row status, cancel/retry/remove wired to their use cases. */
-export function LibraryPage({ deps, queue, progressByTrackId, onOpenInMixer, startupSweepGuard }: LibraryPageProps) {
+export function LibraryPage({
+  deps,
+  queue,
+  progressByTrackId,
+  onOpenInMixer,
+  onExport,
+  startupSweepGuard,
+}: LibraryPageProps) {
   const [tracks, setTracks] = useState<readonly Track[]>([])
   const [sweepsDone, setSweepsDone] = useState(false)
   const [searchQuery, setSearchQuery] = useState('')
@@ -154,6 +162,7 @@ export function LibraryPage({ deps, queue, progressByTrackId, onOpenInMixer, sta
                 onRetryFileChosen={(file) => void handleRetryFileChosen(track.trackId, file)}
                 onRetryCancelled={() => setRetryPromptTrackId(null)}
                 onOpenInMixer={onOpenInMixer}
+                onExport={onExport}
               />
             ))}
           </ul>
