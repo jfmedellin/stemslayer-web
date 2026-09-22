@@ -1,6 +1,7 @@
 import { useEffect, useState } from 'react'
 import { addToLibrary, type AddToLibraryDeps, type AddToLibraryResult } from '../../application/add-to-library'
 import type { ModelFootprint } from '../../application/ports/model-store-port'
+import type { SeparationQueue } from '../../application/separation-queue'
 import { BASIC_PROFILE, ROCK_PROFILE, type StemProfile } from '../../domain/stem-profile'
 import type { NavigatorGpuLike } from '../../infrastructure/onnx-worker/onnx-session-manager'
 import { formatBytes } from '../format/format-bytes'
@@ -16,6 +17,8 @@ import { readAudioFileMetadata, type AudioFileMetadata } from './read-audio-file
 export interface UploadPageProps {
   readonly deps: AddToLibraryDeps
   readonly navigatorRef: NavigatorGpuLike
+  /** The one shared queue (`app-dependencies.ts`): a `claimed`/`adopted` decision actually starts a job here. */
+  readonly queue: SeparationQueue
 }
 
 interface LoadedFile {
@@ -47,7 +50,7 @@ function successCopyForDecision(decision: 'claimed' | 'reused' | 'awaiting' | 'a
 }
 
 /** Container for the Upload destination: owns the loaded-file/profile/submission state and calls `addToLibrary`. */
-export function UploadPage({ deps, navigatorRef }: UploadPageProps) {
+export function UploadPage({ deps, navigatorRef, queue }: UploadPageProps) {
   const [loaded, setLoaded] = useState<LoadedFile | null>(null)
   const [rejectionMessage, setRejectionMessage] = useState<string | null>(null)
   const [profile, setProfile] = useState<StemProfile>(ROCK_PROFILE)
@@ -113,6 +116,13 @@ export function UploadPage({ deps, navigatorRef }: UploadPageProps) {
         availableBytes: result.availableBytes,
       })
       return
+    }
+
+    // Only a fresh claim or an adopted (previously failed/interrupted/unavailable)
+    // row needs a job started; `reused`/`awaiting` already have one, owned by
+    // this tab or another.
+    if (result.decision === 'claimed' || result.decision === 'adopted') {
+      queue.enqueue(result.track.trackId, loaded.bytes)
     }
     setSubmission({ kind: 'succeeded', decision: result.decision })
   }

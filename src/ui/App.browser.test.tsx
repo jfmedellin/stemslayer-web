@@ -1,30 +1,26 @@
 import { afterEach, expect, test } from 'vitest'
 import { flushSync } from 'react-dom'
 import { createRoot, type Root } from 'react-dom/client'
+import {
+  buildFakeAppDependencies,
+  settleStartupSweep,
+  type FakeAppDependencies,
+} from '../../tests/fakes/build-fake-app-dependencies'
 import { App } from './App.tsx'
-import { FakeHash } from '../../tests/fakes/fake-hash'
-import { FakeLock } from '../../tests/fakes/fake-lock'
-import { FakeQuota } from '../../tests/fakes/fake-quota'
-import { InMemoryCatalog } from '../../tests/fakes/in-memory-catalog'
-import { InMemoryModelStore } from '../../tests/fakes/in-memory-model-store'
 
 let root: Root
 afterEach(() => root.unmount())
 
-function renderApp() {
+function renderApp(availableBytes = 5_000_000_000): FakeAppDependencies {
+  const testDeps = buildFakeAppDependencies({ availableBytes })
   root = createRoot(document.body.appendChild(document.createElement('div')))
-  flushSync(() => root.render(<App dependencies={{
-    addToLibraryDeps: {
-      catalog: new InMemoryCatalog(),
-      modelStore: new InMemoryModelStore(),
-      quota: new FakeQuota(5_000_000_000),
-      lock: new FakeLock(),
-      hash: new FakeHash(),
-      generateTrackId: () => `track-${Math.random()}`,
-      now: () => '2026-09-22T00:00:00.000Z',
-    },
-    navigatorRef: { gpu: undefined },
-  }} />))
+  flushSync(() => root.render(<App dependencies={testDeps.deps} />))
+  return testDeps
+}
+
+function clickNav(label: string): void {
+  const item = [...document.querySelectorAll('.nav-item')].find((el) => el.textContent === label)
+  flushSync(() => (item as HTMLButtonElement).click())
 }
 
 test('renders the real four-destination shell with the Upload page active by default', () => {
@@ -36,10 +32,46 @@ test('renders the real four-destination shell with the Upload page active by def
   expect(document.querySelector('.engine-pill')?.textContent).toBe('WASM')
 })
 
-test('navigating to Library renders a placeholder destination without any mixer/export wiring', async () => {
+test('navigating to Library renders the real Library page, not a placeholder', () => {
   renderApp()
-  const libraryItem = [...document.querySelectorAll('.nav-item')].find((el) => el.textContent === 'Library')
-  flushSync(() => (libraryItem as HTMLButtonElement).click())
+  clickNav('Library')
   expect(document.querySelector('[aria-current="page"]')?.textContent).toBe('Library')
   expect(document.querySelector('.drop-zone')).toBeNull()
+  expect(document.querySelector('.library-search')).not.toBeNull()
+  expect(document.querySelector('.library-empty')?.textContent).toBe('No tracks yet.')
+})
+
+test('a job enqueued from Upload is visible, with live progress, from Library after navigating', async () => {
+  const testDeps = buildFakeAppDependencies({ availableBytes: 5_000_000_000 })
+  await settleStartupSweep(testDeps) // the app has already booted before this "job" is created
+  root = createRoot(document.body.appendChild(document.createElement('div')))
+  flushSync(() => root.render(<App dependencies={testDeps.deps} />))
+
+  // Seed a track directly in `preparing` (bypassing the drop-zone flow, already
+  // covered by UploadPage's own tests) and feed the queue's onProgress the way
+  // a real running job would, to prove App owns progress across the nav switch.
+  const track = {
+    trackId: 'track-a',
+    title: 'song',
+    artist: 'Unknown artist',
+    genre: null,
+    durationSeconds: 10,
+    bpm: null,
+    musicalKey: null,
+    createdAtUtc: '2026-09-22T00:00:00.000Z',
+    profileId: 'metal-stereo-six-stem',
+    pipelineFingerprint: 'fp',
+    resultKey: 'stems/track-a',
+    sourceHash: 'hash-a',
+    status: 'preparing' as const,
+    errorDetail: null,
+  }
+  await testDeps.catalog.insert(track)
+  flushSync(() => testDeps.deps.progressHub.emit('track-a', { phase: 'preparing', detail: 'Preparing Rock: 50%' }))
+
+  clickNav('Library')
+  await new Promise((resolve) => setTimeout(resolve, 250))
+
+  const row = document.querySelector('.track-row[data-status="preparing"]')
+  expect(row?.querySelector('.track-row-status')?.textContent).toBe('Preparing Rock: 50%')
 })

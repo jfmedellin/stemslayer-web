@@ -1,13 +1,9 @@
 import { afterEach, expect, test } from 'vitest'
 import { flushSync } from 'react-dom'
 import { createRoot, type Root } from 'react-dom/client'
-import type { AddToLibraryDeps } from '../../application/add-to-library'
+import { expectedLaneKeys } from '../../application/separation-lane-keys'
 import { BASIC_PROFILE, ROCK_PROFILE } from '../../domain/stem-profile'
-import { FakeHash } from '../../../tests/fakes/fake-hash'
-import { FakeLock } from '../../../tests/fakes/fake-lock'
-import { FakeQuota } from '../../../tests/fakes/fake-quota'
-import { InMemoryCatalog } from '../../../tests/fakes/in-memory-catalog'
-import { InMemoryModelStore } from '../../../tests/fakes/in-memory-model-store'
+import { buildFakeAppDependencies, type FakeAppDependencies } from '../../../tests/fakes/build-fake-app-dependencies'
 import { UploadPage } from './UploadPage'
 
 let root: Root
@@ -52,45 +48,32 @@ function chooseFilesViaInput(input: HTMLInputElement, files: readonly File[]): v
   input.dispatchEvent(new Event('change', { bubbles: true }))
 }
 
-interface TestDeps {
-  readonly deps: AddToLibraryDeps
-  readonly catalog: InMemoryCatalog
-  readonly quota: FakeQuota
-  readonly modelStore: InMemoryModelStore
+function buildDeps(availableBytes: number): FakeAppDependencies {
+  const fake = buildFakeAppDependencies({ availableBytes, gpu: {} })
+  fake.modelStore.setFootprint(BASIC_PROFILE.profileId, { cached: true, sizeBytes: 174_266_088 })
+  fake.modelStore.setFootprint(ROCK_PROFILE.profileId, { cached: true, sizeBytes: 284_797_240 })
+  return fake
 }
 
-function buildDeps(availableBytes: number): TestDeps {
-  const catalog = new InMemoryCatalog()
-  const modelStore = new InMemoryModelStore()
-  modelStore.setFootprint(BASIC_PROFILE.profileId, { cached: true, sizeBytes: 174_266_088 })
-  modelStore.setFootprint(ROCK_PROFILE.profileId, { cached: true, sizeBytes: 284_797_240 })
-  const quota = new FakeQuota(availableBytes)
-  let trackIdCounter = 0
-  const deps: AddToLibraryDeps = {
-    catalog,
-    modelStore,
-    quota,
-    lock: new FakeLock(),
-    hash: new FakeHash(),
-    generateTrackId: () => `track-${trackIdCounter++}`,
-    now: () => '2026-09-22T00:00:00.000Z',
-  }
-  return { deps, catalog, quota, modelStore }
-}
-
-async function renderUploadPage(availableBytes = 10_000_000_000): Promise<{ testDeps: TestDeps }> {
+async function renderUploadPage(availableBytes = 10_000_000_000): Promise<{ testDeps: FakeAppDependencies }> {
   const testDeps = buildDeps(availableBytes)
   container = document.body.appendChild(document.createElement('div'))
   root = createRoot(container)
-  flushSync(() => root.render(<UploadPage deps={testDeps.deps} navigatorRef={{ gpu: {} }} />))
+  flushSync(() => root.render(
+    <UploadPage
+      deps={testDeps.deps.addToLibraryDeps}
+      navigatorRef={testDeps.deps.navigatorRef}
+      queue={testDeps.deps.separationQueue}
+    />,
+  ))
   // Let the initial quota/footprint effects settle.
   await new Promise((resolve) => setTimeout(resolve, 0))
   return { testDeps }
 }
 
-async function waitFor(predicate: () => boolean, timeoutMs = 2000): Promise<void> {
+async function waitFor(predicate: () => boolean | Promise<boolean>, timeoutMs = 2000): Promise<void> {
   const start = Date.now()
-  while (!predicate()) {
+  while (!(await predicate())) {
     if (Date.now() - start > timeoutMs) throw new Error('waitFor: timed out')
     await new Promise((resolve) => setTimeout(resolve, 10))
   }
@@ -168,6 +151,27 @@ test('the primary action calls addToLibrary with the selected profile and shows 
   const rows = await testDeps.catalog.listAll()
   expect(rows).toHaveLength(1)
   expect(rows[0]?.profileId).toBe(ROCK_PROFILE.profileId)
+})
+
+test('a claimed decision actually enqueues a real job into the shared queue, which reaches ready', async () => {
+  const { testDeps } = await renderUploadPage()
+  const zone = document.querySelector('.drop-zone')
+  if (zone === null) throw new Error('drop zone not found')
+  dropFiles(zone, [buildWavFile('song.wav', 4)])
+  await waitFor(() => document.querySelector('.file-card') !== null)
+
+  // Deterministic first-generated id from buildFakeAppDependencies's counter.
+  const trackId = 'track-0'
+  const laneKeys = ROCK_PROFILE.lanes.map((lane) => `stems/${trackId}/${lane.laneId}`)
+  testDeps.inference.scriptSuccess(trackId, laneKeys)
+
+  document.querySelector<HTMLButtonElement>('.primary-action')?.click()
+  await waitFor(() => document.querySelector('.submission-status') !== null)
+
+  await waitFor(async () => (await testDeps.catalog.getById(trackId))?.status === 'ready')
+  const track = await testDeps.catalog.getById(trackId)
+  expect(track?.status).toBe('ready')
+  expect(expectedLaneKeys(track!).every((key) => testDeps.stemStore.has(key))).toBe(true)
 })
 
 test('a quota-refused decision is shown inline instead of navigating away', async () => {
