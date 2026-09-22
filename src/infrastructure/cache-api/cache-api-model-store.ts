@@ -60,6 +60,22 @@ export class ModelCacheWriteError extends Error {
   }
 }
 
+export class ModelNotCachedError extends Error {
+  constructor(readonly profileId: string) {
+    super(`model-store.not_cached:${profileId}`)
+    this.name = 'ModelNotCachedError'
+  }
+}
+
+export class ModelCacheReadError extends Error {
+  constructor(readonly profileId: string, readonly status?: number) {
+    super(status === undefined
+      ? `model-store.cache_read_failed:${profileId}`
+      : `model-store.cache_read_failed:${profileId}:${status}`)
+    this.name = 'ModelCacheReadError'
+  }
+}
+
 export interface CacheApiModelStoreOptions {
   readonly manifest?: PinnedModelManifest
   readonly cacheStorage?: CacheStorage
@@ -154,6 +170,32 @@ export class CacheApiModelStore implements ModelStorePort {
       throw error
     }
     await this.removeObsoleteRevisions(entry)
+  }
+
+  async read(profileId: string): Promise<Uint8Array> {
+    const entry = this.resolve(profileId)
+    const cache = await this.cacheStorage.open(cacheNameForModel(entry))
+    const cached = await cache.match(entry.url)
+    if (cached === undefined) throw new ModelNotCachedError(profileId)
+
+    try {
+      if (!cached.ok || cached.body === null) {
+        throw new ModelCacheReadError(profileId, cached.status)
+      }
+      const bytes = new Uint8Array(await cached.arrayBuffer())
+      await this.verify(entry, bytes)
+      return bytes.slice()
+    } catch (error) {
+      await cache.delete(entry.url)
+      if (
+        error instanceof ModelCacheReadError
+        || error instanceof ModelSizeMismatchError
+        || error instanceof ModelDigestMismatchError
+      ) {
+        throw error
+      }
+      throw new ModelCacheReadError(profileId)
+    }
   }
 
   private resolve(profileId: string): PinnedModelManifestEntry {

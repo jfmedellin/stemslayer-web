@@ -9,6 +9,7 @@ const defaultFootprint: ModelFootprint = { cached: false, sizeBytes: 0 }
 export class InMemoryModelStore implements ModelStorePort {
   private readonly footprintsByProfileId = new Map<string, ModelFootprint>()
   private readonly downloadStepsByProfileId = new Map<string, readonly ModelDownloadProgress[]>()
+  private readonly bytesByProfileId = new Map<string, Uint8Array>()
 
   async getFootprint(profileId: string): Promise<ModelFootprint> {
     return this.footprintsByProfileId.get(profileId) ?? defaultFootprint
@@ -23,6 +24,11 @@ export class InMemoryModelStore implements ModelStorePort {
     this.downloadStepsByProfileId.set(profileId, steps)
   }
 
+  setBytes(profileId: string, bytes: Uint8Array): void {
+    this.bytesByProfileId.set(profileId, bytes.slice())
+    this.footprintsByProfileId.set(profileId, { cached: true, sizeBytes: bytes.byteLength })
+  }
+
   async ensure(profileId: string, onProgress: (progress: ModelDownloadProgress) => void): Promise<void> {
     const footprint = this.footprintsByProfileId.get(profileId) ?? defaultFootprint
     if (footprint.cached) return
@@ -32,5 +38,11 @@ export class InMemoryModelStore implements ModelStorePort {
     for (const step of steps) onProgress(step)
 
     this.footprintsByProfileId.set(profileId, { cached: true, sizeBytes: footprint.sizeBytes })
+  }
+
+  async read(profileId: string): Promise<Uint8Array> {
+    const bytes = this.bytesByProfileId.get(profileId)
+    if (bytes === undefined) throw new Error(`model-store.not_cached:${profileId}`)
+    return bytes.slice()
   }
 }

@@ -2,8 +2,10 @@ import { afterEach, describe, expect, test, vi } from 'vitest'
 import {
   CacheApiModelStore,
   ModelCacheWriteError,
+  ModelCacheReadError,
   ModelDigestMismatchError,
   ModelDownloadError,
+  ModelNotCachedError,
   ModelSizeMismatchError,
   ModelStreamError,
   UnknownModelProfileError,
@@ -123,6 +125,61 @@ describe('CacheApiModelStore', () => {
 
     expect(fetcher).not.toHaveBeenCalled()
     expect(progress).not.toHaveBeenCalled()
+  })
+
+  test('reads detached verified bytes from the active revision after ensure', async () => {
+    const store = new CacheApiModelStore({
+      manifest,
+      cacheStorage: caches,
+      fetcher: fetchReturning(responseWithChunks(new Uint8Array([97, 98, 99]))),
+    })
+    await store.ensure(entry.profileId, vi.fn())
+
+    const first = await store.read(entry.profileId)
+    first[0] = 0
+
+    await expect(store.read(entry.profileId)).resolves.toEqual(new Uint8Array([97, 98, 99]))
+  })
+
+  test('read fails closed for unknown and missing profiles without downloading', async () => {
+    const fetcher = vi.fn<typeof fetch>()
+    const store = new CacheApiModelStore({ manifest, cacheStorage: caches, fetcher })
+
+    await expect(store.read('unknown')).rejects.toBeInstanceOf(UnknownModelProfileError)
+    await expect(store.read(entry.profileId)).rejects.toBeInstanceOf(ModelNotCachedError)
+    expect(fetcher).not.toHaveBeenCalled()
+  })
+
+  test.each([
+    ['size', new Uint8Array([97, 98]), ModelSizeMismatchError],
+    ['digest', new Uint8Array([97, 98, 100]), ModelDigestMismatchError],
+  ])('read removes an active cache entry with a %s mismatch', async (_case, bytes, ErrorType) => {
+    await seed(entry, bytes)
+    const store = new CacheApiModelStore({ manifest, cacheStorage: caches })
+
+    await expect(store.read(entry.profileId)).rejects.toBeInstanceOf(ErrorType)
+    expect(await (await caches.open(cacheNameForModel(entry))).match(entry.url)).toBeUndefined()
+  })
+
+  test.each([
+    ['non-success status', new Response('unavailable', { status: 503 })],
+    ['missing body', new Response(null, { status: 200 })],
+  ])('read rejects an unusable cached response with %s', async (_case, response) => {
+    const cacheStorage = new Proxy(caches, {
+      get(target, property, receiver) {
+        if (property !== 'open') return Reflect.get(target, property, receiver)
+        return async () => new Proxy(await target.open(cacheNameForModel(entry)), {
+          get(cache, cacheProperty, cacheReceiver) {
+            if (cacheProperty === 'match') return async () => response
+            const value = Reflect.get(cache, cacheProperty, cacheReceiver) as unknown
+            return typeof value === 'function' ? value.bind(cache) : value
+          },
+        })
+      },
+    })
+    const store = new CacheApiModelStore({ manifest, cacheStorage })
+
+    await expect(store.read(entry.profileId)).rejects.toBeInstanceOf(ModelCacheReadError)
   })
 
   test('fails closed with a typed download error when fetch rejects or returns an error', async () => {

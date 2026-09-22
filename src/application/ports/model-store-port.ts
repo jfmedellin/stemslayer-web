@@ -25,4 +25,9 @@ export interface ModelStorePort {
    * (`docs/decisions/browser-storage.md` section 5, `model_manager.py:226-227`).
    */
   ensure(profileId: string, onProgress: (progress: ModelDownloadProgress) => void): Promise<void>
+  /**
+   * Returns an owned copy of the already-cached, verified model bytes.
+   * Never downloads or repairs: callers must `ensure()` first.
+   */
+  read(profileId: string): Promise<Uint8Array>
 }

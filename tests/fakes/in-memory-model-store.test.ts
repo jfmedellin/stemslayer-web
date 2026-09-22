@@ -66,4 +66,21 @@ describe('InMemoryModelStore', () => {
       { receivedBytes: 300, totalBytes: 300 },
     ])
   })
+
+  test('returns an owned copy of configured model bytes', async () => {
+    const store = new InMemoryModelStore()
+    store.setBytes('legacy-four-stem', new Uint8Array([1, 2, 3]))
+
+    const first = await store.read('legacy-four-stem')
+    first[0] = 9
+
+    await expect(store.read('legacy-four-stem')).resolves.toEqual(new Uint8Array([1, 2, 3]))
+    await expect(store.getFootprint('legacy-four-stem')).resolves.toEqual({ cached: true, sizeBytes: 3 })
+  })
+
+  test('read rejects when no model bytes were configured', async () => {
+    const store = new InMemoryModelStore()
+
+    await expect(store.read('legacy-four-stem')).rejects.toThrow('model-store.not_cached:legacy-four-stem')
+  })
 })
