@@ -80,6 +80,8 @@ export class OnnxWorkerInference implements InferencePort {
       if (settled || finishing) return
       finishing = true
       terminateWorker()
+      await (persistence?.catch(() => undefined) ?? Promise.resolve())
+      if (settled) return
       try {
         await cleanup()
       } catch (cleanupError) {
