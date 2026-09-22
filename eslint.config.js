@@ -5,7 +5,11 @@ import tseslint from 'typescript-eslint'
 const restricted = (...patterns) => ['error', { patterns }]
 
 export default tseslint.config(
-  { ignores: ['dist', 'node_modules', '.codegraph', 'spikes'] },
+  // `.kilo`/`.kilocode` worktrees are another local coding agent's checkouts
+  // of this same repo (already excluded from git in `.git/info/exclude`); a
+  // nested `tsconfig.json` inside one confuses typescript-eslint's automatic
+  // project-root detection across the whole tree if ESLint walks into it.
+  { ignores: ['dist', 'node_modules', '.codegraph', 'spikes', '.kilo', '.kilocode'] },
   js.configs.recommended,
   ...tseslint.configs.recommended,
   {
