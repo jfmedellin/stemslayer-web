@@ -1,6 +1,6 @@
 import { describe, expect, test } from 'vitest'
 
-import { ClippingError, decodeFloat32Wav, encodeFloat32Wav } from '../../src/infrastructure/opfs/float32-wav'
+import { ClippingError, decodeFloat32Wav, encodeFloat32Wav } from '../../src/domain/audio/float32-wav'
 
 // Golden fixture: bytes computed by the desktop encoder
 // (`SeparationWorker/engine/wav.py:encode_float32_wav`), read-only reference

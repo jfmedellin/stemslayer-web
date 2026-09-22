@@ -7,7 +7,12 @@
  * metadata chunks (`docs/decisions/browser-storage.md` section 2).
  *
  * Pure functions, no browser or Node API dependency, usable from the main
- * thread and from the inference Worker (P7).
+ * thread and from the inference Worker (P7). Lives in `domain` (not
+ * `infrastructure`, where P5 first placed it) so `application/open-in-mixer.ts`
+ * can decode a stored lane's exact bytes (P9) without crossing the
+ * application -> infrastructure layering boundary `eslint.config.js` enforces;
+ * `infrastructure/onnx-worker` and `infrastructure/opfs` still use it freely,
+ * since infrastructure may import domain.
  */
 
 const FORMAT_TAG_IEEE_FLOAT = 3

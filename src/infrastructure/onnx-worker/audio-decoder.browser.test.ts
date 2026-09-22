@@ -1,6 +1,6 @@
 import { describe, expect, test, vi } from 'vitest'
 
-import { encodeFloat32Wav } from '../opfs/float32-wav'
+import { encodeFloat32Wav } from '../../domain/audio/float32-wav'
 import {
   AudioDecodeError,
   DecodedAudioChannelCountError,

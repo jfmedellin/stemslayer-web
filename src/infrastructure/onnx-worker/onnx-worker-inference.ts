@@ -7,7 +7,7 @@ import {
 } from '../../application/ports/inference-port'
 import type { ModelStorePort } from '../../application/ports/model-store-port'
 import type { StemStorePort } from '../../application/ports/stem-store-port'
-import { encodeFloat32Wav } from '../opfs/float32-wav'
+import { encodeFloat32Wav } from '../../domain/audio/float32-wav'
 import { WebAudioInferenceDecoder, type DecodedInferenceAudio } from './audio-decoder'
 import {
   isWorkerOutboundMessage,
