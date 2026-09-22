@@ -88,8 +88,8 @@ def build_basic_model() -> onnx.ModelProto:
     time = helper.make_tensor_value_info("time", TensorProto.FLOAT, TIME_SHAPE)
 
     initializers = [
-        shape_initializer("mag_expand_shape", [1, 4, 1, 2048, 336]),
-        repeats_initializer("freq_repeats", [1, 1, 4, 1, 1]),
+        shape_initializer("mag_expand_shape", [1, 1, 4, 2048, 336]),
+        repeats_initializer("freq_repeats", [1, 4, 1, 1, 1]),
         scalar_initializer("freq_scale", 3.0),
         shape_initializer("mix_expand_shape", [1, 1, 2, 343_980]),
         repeats_initializer("time_repeats", [1, 4, 1, 1]),
@@ -140,7 +140,10 @@ def main() -> None:
     print(f"wrote {basic_path} ({basic_path.stat().st_size} bytes)")
 
     ones_mix = np.ones(MIX_SHAPE, dtype=np.float32)
-    ones_mag = np.ones(MAG_SHAPE, dtype=np.float32)
+    semantic_mag = np.empty(MAG_SHAPE, dtype=np.float32)
+    for channel in range(MAG_SHAPE[1]):
+        semantic_mag[:, channel, :, :] = channel + 1
+    expected_freq = np.tile(semantic_mag[:, np.newaxis, :, :, :], (1, 4, 1, 1, 1)) * 3.0
 
     verify_with_onnxruntime(
         rock_path,
@@ -149,9 +152,9 @@ def main() -> None:
     )
     verify_with_onnxruntime(
         basic_path,
-        {"mix": ones_mix, "mag": ones_mag},
+        {"mix": ones_mix, "mag": semantic_mag},
         {
-            "freq": np.full(FREQ_SHAPE, 3.0, dtype=np.float32),
+            "freq": expected_freq,
             "time": np.full(TIME_SHAPE, 5.0, dtype=np.float32),
         },
     )

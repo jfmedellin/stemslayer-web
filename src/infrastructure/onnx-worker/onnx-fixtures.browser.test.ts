@@ -39,6 +39,27 @@ function assertConstantOutput(output: Tensor, expectedShape: readonly number[], 
   }
 }
 
+function basicMagTensor(): Tensor {
+  const [, cacChannels, bins, frames] = MAG_SHAPE
+  const data = new Float32Array(product(MAG_SHAPE))
+  const valuesPerChannel = bins * frames
+  for (let channel = 0; channel < cacChannels; channel += 1) {
+    data.fill(channel + 1, channel * valuesPerChannel, (channel + 1) * valuesPerChannel)
+  }
+  return new Tensor('float32', data, MAG_SHAPE as unknown as number[])
+}
+
+function assertBasicFreqLayout(output: Tensor): void {
+  const data = output.data as Float32Array
+  const [, sourceCount, cacChannels, bins, frames] = FREQ_SHAPE
+  for (let source = 0; source < sourceCount; source += 1) {
+    for (let channel = 0; channel < cacChannels; channel += 1) {
+      const index = ((source * cacChannels + channel) * bins) * frames
+      expect(data[index]).toBe((channel + 1) * 3)
+    }
+  }
+}
+
 async function fetchFixtureBytes(url: string): Promise<Uint8Array> {
   const response = await fetch(url)
   return new Uint8Array(await response.arrayBuffer())
@@ -72,10 +93,13 @@ describe('synthetic ONNX fixtures load into a real onnxruntime-web session (WASM
     expect(session.inputNames.slice().sort()).toEqual(['mag', 'mix'])
     expect(session.outputNames.slice().sort()).toEqual(['freq', 'time'])
 
-    const feeds = { mix: filledTensor(MIX_SHAPE, 1), mag: filledTensor(MAG_SHAPE, 1) }
+    const feeds = { mix: filledTensor(MIX_SHAPE, 1), mag: basicMagTensor() }
     const results = await session.run(feeds)
 
-    assertConstantOutput(results.freq, FREQ_SHAPE, 3)
+    expect(Array.from(results.freq.dims)).toEqual(FREQ_SHAPE)
+    expect(results.freq.type).toBe('float32')
+    expect(results.freq.data.length).toBe(product(FREQ_SHAPE))
+    assertBasicFreqLayout(results.freq)
     assertConstantOutput(results.time, TIME_SHAPE, 5)
   })
 })
