@@ -6,6 +6,9 @@ import {
   settleStartupSweep,
   type FakeAppDependencies,
 } from '../../tests/fakes/build-fake-app-dependencies'
+import { encodeFloat32Wav } from '../domain/audio/float32-wav'
+import { BASIC_PROFILE } from '../domain/stem-profile'
+import type { Track } from '../domain/track'
 import { App } from './App.tsx'
 
 let root: Root
@@ -74,4 +77,74 @@ test('a job enqueued from Upload is visible, with live progress, from Library af
 
   const row = document.querySelector('.track-row[data-status="preparing"]')
   expect(row?.querySelector('.track-row-status')?.textContent).toBe('Preparing Rock: 50%')
+})
+
+function readyTrack(overrides: Partial<Track>): Track {
+  return {
+    trackId: 'track-1',
+    title: 'Untitled',
+    artist: 'Unknown artist',
+    genre: null,
+    durationSeconds: 1,
+    bpm: null,
+    musicalKey: null,
+    createdAtUtc: '2026-09-22T00:00:00.000Z',
+    profileId: BASIC_PROFILE.profileId,
+    pipelineFingerprint: 'fp',
+    resultKey: `stems/${overrides.trackId ?? 'track-1'}`,
+    sourceHash: `hash-${overrides.trackId ?? 'track-1'}`,
+    status: 'ready',
+    errorDetail: null,
+    ...overrides,
+  }
+}
+
+async function seedStems(testDeps: FakeAppDependencies, track: Track): Promise<void> {
+  for (const lane of BASIC_PROFILE.lanes) {
+    const channel = Float32Array.from({ length: 100 }, (_unused, index) => (index / 1000) + 0.01)
+    const bytes = encodeFloat32Wav({ sampleRate: 8_000, planar: [channel, channel] })
+    await testDeps.stemStore.writeLane(track.resultKey, lane.laneId, bytes)
+  }
+}
+
+// This proves the P9B trackId-threading fix end to end: before this fix,
+// `LibraryPage`'s `onOpenInMixer` navigated to the Mixer destination with no
+// track id, so Mixer had no way to know which track to load.
+test('"Open in mixer" from a specific Library row opens the mixer with that exact track', async () => {
+  const testDeps = buildFakeAppDependencies({ availableBytes: 5_000_000_000 })
+  await settleStartupSweep(testDeps)
+
+  const trackA = readyTrack({ trackId: 'track-a', title: 'First Song', artist: 'Artist A' })
+  const trackB = readyTrack({ trackId: 'track-b', title: 'Second Song', artist: 'Artist B' })
+  await testDeps.catalog.insert(trackA)
+  await testDeps.catalog.insert(trackB)
+  await seedStems(testDeps, trackA)
+  await seedStems(testDeps, trackB)
+
+  root = createRoot(document.body.appendChild(document.createElement('div')))
+  flushSync(() => root.render(<App dependencies={testDeps.deps} />))
+
+  clickNav('Library')
+  await new Promise((resolve) => setTimeout(resolve, 50))
+
+  const rowB = document.querySelector('.track-row[data-track-id="track-b"] .track-row-open-mixer')
+  if (rowB === null) throw new Error('track-b open-in-mixer button not found')
+  flushSync(() => (rowB as HTMLButtonElement).click())
+
+  await new Promise((resolve, reject) => {
+    const start = Date.now()
+    const poll = setInterval(() => {
+      const title = document.querySelector('.mixer-track-title')?.textContent
+      if (title === 'Second Song') {
+        clearInterval(poll)
+        resolve(undefined)
+      } else if (Date.now() - start > 2000) {
+        clearInterval(poll)
+        reject(new Error(`timed out waiting for mixer title, last seen: ${title}`))
+      }
+    }, 10)
+  })
+
+  expect(document.querySelector('.mixer-track-artist')?.textContent).toBe('Artist B')
+  expect(document.querySelector('.mixer-track-title')?.textContent).not.toBe('First Song')
 })

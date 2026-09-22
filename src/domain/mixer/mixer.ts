@@ -186,6 +186,43 @@ export function assertLaneInLayout(laneId: string, lanes: readonly StemLane[]): 
   if (!lanes.some((lane) => lane.laneId === laneId)) reject('mixer.lane_outside_layout')
 }
 
+/** Peak/waveform envelope bin count per lane (`engine/stem_session.py:30`, `PEAK_BIN_COUNT`). */
+export const PEAK_BIN_COUNT = 2000
+
+/**
+ * Downsamples a lane's decoded planar stereo PCM into `binCount` max-abs
+ * bins for the waveform strip (`feature-parity.md`'s Mixer "Peak/waveform
+ * envelope" row: "2000 max-abs bins per lane, computed once when the
+ * session loads"). Combines both channels into one envelope per lane (the
+ * strip draws one waveform per lane, not per channel) by taking, in each
+ * bin, whichever channel has the greater max-abs sample — the simplest
+ * reduction that still reflects true peak loudness in either channel,
+ * equally correct to a left-only or mid/side reduction for a purely visual
+ * envelope (writer's call, per the task's own explicit permission to choose).
+ */
+export function computePeakEnvelope(
+  channels: readonly [Float32Array, Float32Array],
+  binCount: number = PEAK_BIN_COUNT,
+): Float32Array {
+  const frameCount = channels[0].length
+  const peaks = new Float32Array(binCount)
+  if (frameCount === 0 || binCount === 0) return peaks
+
+  for (let bin = 0; bin < binCount; bin += 1) {
+    const start = Math.floor((bin * frameCount) / binCount)
+    const end = Math.max(start + 1, Math.floor(((bin + 1) * frameCount) / binCount))
+    let max = 0
+    for (let frame = start; frame < end && frame < frameCount; frame += 1) {
+      const left = Math.abs(channels[0][frame])
+      const right = Math.abs(channels[1][frame])
+      const value = left > right ? left : right
+      if (value > max) max = value
+    }
+    peaks[bin] = max
+  }
+  return peaks
+}
+
 /**
  * Async load generation token: `openInMixer`/the loading caller takes a
  * token via `next()` before starting an async load and checks `isStale()`

@@ -1,6 +1,7 @@
 import type { AppDependencies } from '../../src/ui/app-dependencies'
 import { ProgressHub, StartupSweepGuard } from '../../src/ui/app-dependencies'
 import { SeparationQueue } from '../../src/application/separation-queue'
+import { FakeAudioEnginePort } from './fake-audio-engine'
 import { FakeHash } from './fake-hash'
 import { FakeInference } from './fake-inference'
 import { FakeLock } from './fake-lock'
@@ -16,6 +17,7 @@ export interface FakeAppDependencies {
   readonly modelStore: InMemoryModelStore
   readonly stemStore: InMemoryStemStore
   readonly inference: FakeInference
+  readonly audioEngine: FakeAudioEnginePort
 }
 
 export interface FakeAppDependenciesOptions {
@@ -48,6 +50,7 @@ export function buildFakeAppDependencies(options: FakeAppDependenciesOptions = {
   const stemStore = new InMemoryStemStore()
   const inference = new FakeInference(stemStore)
   const progressHub = new ProgressHub()
+  const audioEngine = new FakeAudioEnginePort()
   let trackIdCounter = 0
 
   const separationQueue = new SeparationQueue({
@@ -79,9 +82,10 @@ export function buildFakeAppDependencies(options: FakeAppDependenciesOptions = {
     separationQueue,
     progressHub,
     startupSweepGuard,
+    audioEngine,
   }
 
-  return { deps, catalog, quota, modelStore, stemStore, inference }
+  return { deps, catalog, quota, modelStore, stemStore, inference, audioEngine }
 }
 
 /**

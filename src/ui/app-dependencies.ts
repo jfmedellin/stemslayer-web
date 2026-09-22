@@ -1,4 +1,5 @@
 import type { AddToLibraryDeps } from '../application/add-to-library'
+import type { AudioEnginePort } from '../application/ports/audio-engine-port'
 import type { InferencePort } from '../application/ports/inference-port'
 import type { StemStorePort } from '../application/ports/stem-store-port'
 import { runStartupSweeps, type RunStartupSweepsDeps, type StartupSweepCounts } from '../application/run-startup-sweeps'
@@ -10,6 +11,7 @@ import { OnnxWorkerInference } from '../infrastructure/onnx-worker/onnx-worker-i
 import type { NavigatorGpuLike } from '../infrastructure/onnx-worker/onnx-session-manager'
 import { NavigatorStorageQuota } from '../infrastructure/opfs/navigator-storage-quota'
 import { OpfsStemStore } from '../infrastructure/opfs/opfs-stem-store'
+import { WebAudioEngine } from '../infrastructure/web-audio/web-audio-engine'
 import { WebCryptoHash } from '../infrastructure/web-crypto/web-crypto-hash'
 import { WebLocksLock } from '../infrastructure/web-locks/web-locks-lock'
 
@@ -66,6 +68,14 @@ export interface AppDependencies {
   readonly separationQueue: SeparationQueue
   readonly progressHub: ProgressHub
   readonly startupSweepGuard: StartupSweepGuard
+  /**
+   * P9B: the real Mixer playback engine, constructed once for the app's
+   * whole lifetime (same pattern as `separationQueue`) — one `AudioContext`
+   * shared across every Mixer visit, never disposed on ordinary navigation
+   * (see `MixerPage.tsx`'s own comment on why `dispose()` is reserved for a
+   * teardown this app never performs).
+   */
+  readonly audioEngine: AudioEnginePort
 }
 
 /**
@@ -81,6 +91,7 @@ export function createAppDependencies(): AppDependencies {
   const stemStore = new OpfsStemStore()
   const inference = new OnnxWorkerInference({ modelStore, stemStore })
   const progressHub = new ProgressHub()
+  const audioEngine = new WebAudioEngine()
 
   const separationQueue = new SeparationQueue({
     catalog,
@@ -112,5 +123,6 @@ export function createAppDependencies(): AppDependencies {
     separationQueue,
     progressHub,
     startupSweepGuard,
+    audioEngine,
   }
 }

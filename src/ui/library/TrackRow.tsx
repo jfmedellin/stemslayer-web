@@ -19,7 +19,7 @@ export interface TrackRowProps {
   readonly onRetryRequested: () => void
   readonly onRetryFileChosen: (file: File) => void
   readonly onRetryCancelled: () => void
-  readonly onOpenInMixer: () => void
+  readonly onOpenInMixer: (trackId: string) => void
 }
 
 function statusLabel(track: Track, progress: SeparateProgressEvent | undefined): string {
@@ -66,7 +66,7 @@ export function TrackRow({
 
       <div className="track-row-actions">
         {track.status === 'ready' && (
-          <button type="button" className="track-row-open-mixer" onClick={onOpenInMixer}>
+          <button type="button" className="track-row-open-mixer" onClick={() => onOpenInMixer(track.trackId)}>
             Open in mixer
           </button>
         )}

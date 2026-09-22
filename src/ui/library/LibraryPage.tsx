@@ -27,7 +27,7 @@ export interface LibraryPageProps {
   readonly deps: LibraryPageDeps
   readonly queue: SeparationQueue
   readonly progressByTrackId: Readonly<Record<string, SeparateProgressEvent>>
-  readonly onOpenInMixer: () => void
+  readonly onOpenInMixer: (trackId: string) => void
   /** Session-scoped: ensures the startup sweep runs exactly once, even across repeated Library mounts (`app-dependencies.ts`). */
   readonly startupSweepGuard: StartupSweepGuard
 }

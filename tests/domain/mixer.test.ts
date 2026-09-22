@@ -6,10 +6,12 @@ import {
   MAX_MIXER_LANES,
   MixerDomainError,
   MixerLoadGeneration,
+  PEAK_BIN_COUNT,
   SKIP_SECONDS,
   advanceCursor,
   assertLaneInLayout,
   clampSample,
+  computePeakEnvelope,
   createLoopRange,
   describeLane,
   effectiveGain,
@@ -227,6 +229,38 @@ describe('FALLBACK_MIXER_PROFILE', () => {
 describe('MAX_MIXER_LANES', () => {
   test('matches the largest published profile\'s lane count (Rock, 6)', () => {
     expect(MAX_MIXER_LANES).toBe(6)
+  })
+})
+
+// Waveform envelope for the Mixer UI's lane strip (`feature-parity.md`'s
+// Mixer "Peak/waveform envelope" row): a pure downsampling max-abs
+// reduction, no browser API.
+describe('computePeakEnvelope', () => {
+  test('produces exactly PEAK_BIN_COUNT bins by default', () => {
+    const channel = new Float32Array(10_000)
+    const peaks = computePeakEnvelope([channel, channel])
+    expect(peaks).toHaveLength(PEAK_BIN_COUNT)
+  })
+
+  test('each bin holds the greater of either channel\'s max-abs sample in its range', () => {
+    const left = Float32Array.from([0, 0.2, 0, 0, -0.9, 0, 0, 0, 0, 0])
+    const right = Float32Array.from([0, 0, 0, 0.5, 0, 0, 0, 0, 0, 0])
+    const peaks = computePeakEnvelope([left, right], 2)
+    // Bin 0 covers frames [0,5): max-abs across both channels is 0.9 (left[4]).
+    expect(peaks[0]).toBeCloseTo(0.9, 6)
+    // Bin 1 covers frames [5,10): all zero.
+    expect(peaks[1]).toBe(0)
+  })
+
+  test('an all-silent lane produces an all-zero envelope', () => {
+    const channel = new Float32Array(500)
+    const peaks = computePeakEnvelope([channel, channel], 10)
+    expect([...peaks].every((value) => value === 0)).toBe(true)
+  })
+
+  test('handles a lane shorter than the requested bin count without throwing', () => {
+    const channel = Float32Array.from([0.1, 0.2, 0.3])
+    expect(() => computePeakEnvelope([channel, channel], PEAK_BIN_COUNT)).not.toThrow()
   })
 })
 
