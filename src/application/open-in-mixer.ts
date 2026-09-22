@@ -97,12 +97,30 @@ async function decodeLane(
  * disagree on sample rate, still calls `AudioEnginePort.load` — with the
  * 4-lane Basic-layout error placeholder session instead of throwing,
  * matching the domain's failed-load fallback rule.
+ *
+ * `isStale` (optional) is checked immediately before every
+ * `AudioEnginePort.load` call and skips it when true. A caller juggling
+ * overlapping loads (e.g. the Mixer UI switching tracks before a previous
+ * decode finishes) must pass this so a superseded call's `load()` can never
+ * land after a newer one's — the actual engine state is single, shared, and
+ * `WebAudioEngine`/`AudioEnginePort` has no concept of "reject an outdated
+ * load" on its own. Without this, discarding only the *caller's* stale
+ * result (e.g. a UI generation-token check on the returned value) still lets
+ * the wrong track's audio silently keep playing underneath a UI that shows
+ * the newer track — this function's own `AudioEnginePort.load` calls are the
+ * only place that can actually prevent that.
  */
-export async function openInMixer(trackId: string, deps: OpenInMixerDeps): Promise<OpenInMixerResult> {
+export async function openInMixer(
+  trackId: string,
+  deps: OpenInMixerDeps,
+  options?: { readonly isStale?: () => boolean },
+): Promise<OpenInMixerResult> {
+  const isStale = options?.isStale ?? (() => false)
+
   const track = await deps.catalog.getById(trackId)
   if (track === undefined) {
     const session = fallbackSession(trackId)
-    await deps.audioEngine.load(session)
+    if (!isStale()) await deps.audioEngine.load(session)
     return Object.freeze({ ok: false, reason: 'track-not-found', session })
   }
 
@@ -131,11 +149,11 @@ export async function openInMixer(trackId: string, deps: OpenInMixerDeps): Promi
       }))),
       fallback: false,
     })
-    await deps.audioEngine.load(session)
+    if (!isStale()) await deps.audioEngine.load(session)
     return Object.freeze({ ok: true, session })
   } catch {
     const session = fallbackSession(trackId)
-    await deps.audioEngine.load(session)
+    if (!isStale()) await deps.audioEngine.load(session)
     return Object.freeze({ ok: false, reason: 'stems-unavailable', session })
   }
 }

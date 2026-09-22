@@ -170,6 +170,55 @@ describe('openInMixer', () => {
     expect(engine.loadedSessions[0].fallback).toBe(true)
   })
 
+  test('a superseded call never reaches AudioEnginePort.load, even though it still resolves with a session', async () => {
+    const catalog = new InMemoryCatalog()
+    const stemStore = new InMemoryStemStore()
+    const engine = new FakeAudioEngine()
+    const lanes = new Map(
+      BASIC_PROFILE.lanes.map((lane, index) => [lane.laneId, toneStereo(0.1 * (index + 1))]),
+    )
+    await seedReadyTrack(catalog, stemStore, basicInput, lanes)
+
+    const result = await openInMixer(
+      'track-basic',
+      { catalog, stemStore, audioEngine: engine },
+      { isStale: () => true },
+    )
+
+    expect(result.ok).toBe(true)
+    expect(result.session.trackId).toBe('track-basic')
+    // The whole point: a superseded load must never land on the shared
+    // engine, or an older track's audio could silently keep playing under a
+    // UI that already moved on to a newer one (native review finding
+    // R3-mixer-stale-load-race).
+    expect(engine.loadedSessions).toHaveLength(0)
+  })
+
+  test('a superseded call is also skipped on both fallback paths (unknown track, failed stems)', async () => {
+    const catalog = new InMemoryCatalog()
+    const stemStore = new InMemoryStemStore()
+    const engine = new FakeAudioEngine()
+
+    const missingResult = await openInMixer(
+      'missing-track',
+      { catalog, stemStore, audioEngine: engine },
+      { isStale: () => true },
+    )
+    expect(missingResult.ok).toBe(false)
+    expect(engine.loadedSessions).toHaveLength(0)
+
+    const track = transitionTrack(transitionTrack(createTrack(basicInput), 'processing'), 'ready')
+    await catalog.insert(track)
+    // No lanes seeded: reading them rejects, forcing the stems-unavailable path.
+    const failedResult = await openInMixer(
+      'track-basic',
+      { catalog, stemStore, audioEngine: engine },
+      { isStale: () => true },
+    )
+    expect(failedResult.ok).toBe(false)
+    expect(engine.loadedSessions).toHaveLength(0)
+  })
+
   test('mismatched per-lane sample rates are treated as a failed load rather than silently mixed', async () => {
     const catalog = new InMemoryCatalog()
     const stemStore = new InMemoryStemStore()

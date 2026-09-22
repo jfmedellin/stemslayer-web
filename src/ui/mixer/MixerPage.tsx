@@ -63,11 +63,17 @@ export function MixerPage({ deps, trackId, onBackToLibrary, onExport }: MixerPag
   const sessionRef = useRef<MixerSession | null>(null)
 
   // Loads (or reloads) the track's mixer session whenever `trackId` changes.
-  // `openInMixer` already calls `AudioEnginePort.load(session)`, and
+  // `openInMixer` calls `AudioEnginePort.load(session)` internally; passing
+  // `isStale` makes it skip that call when a newer track switch has already
+  // superseded this one, so a superseded load can never land on the engine
+  // after a newer one's — checking only the *UI* state below (as this used
+  // to do) still let the wrong track's audio keep playing underneath a UI
+  // that showed the newer track, since `WebAudioEngine` is one app-lifetime
+  // singleton with no concept of "reject an outdated load" on its own
+  // (native review finding R3-mixer-stale-load-race, corrected here).
   // `WebAudioEngine.load` already disconnects/replaces the previous worklet
-  // node internally — nothing else needs tearing down here between tracks.
-  // A superseded load (a rapid track switch) is discarded via the domain's
-  // generation guard rather than applied.
+  // node internally for a load that *does* proceed — nothing else needs
+  // tearing down here between tracks.
   useEffect(() => {
     const token = generationRef.current.next()
     setSession(null)
@@ -77,9 +83,13 @@ export function MixerPage({ deps, trackId, onBackToLibrary, onExport }: MixerPag
     setPendingLoopStart(null)
     setMasterGainPercent(DEFAULT_MASTER_GAIN_PERCENT)
 
-    void Promise.all([depsRef.current.catalog.getById(trackId), openInMixer(trackId, depsRef.current)])
+    const isStale = (): boolean => generationRef.current.isStale(token)
+    void Promise.all([
+      depsRef.current.catalog.getById(trackId),
+      openInMixer(trackId, depsRef.current, { isStale }),
+    ])
       .then(([loadedTrack, result]) => {
-        if (generationRef.current.isStale(token)) return
+        if (isStale()) return
         setTrack(loadedTrack)
         setSession(result.session)
         setLoadOk(result.ok)
