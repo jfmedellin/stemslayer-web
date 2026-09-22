@@ -1,38 +1,136 @@
 :root {
   color-scheme: dark;
+
+  /* Surfaces (design-reference.md section 1) */
   --color-void: #12120f;
   --color-panel: #181616;
   --color-control: #1d1c19;
   --color-active: #22211d;
   --color-border: #282727;
   --color-border-module: #363634;
+
+  /* Semantic accents */
   --color-moss: #8a9a7b;
   --color-gold: #c8b38d;
   --color-rust: #c4746e;
+
+  /* Stem colors, including the Rock profile's two guitar tints and olive "other" */
   --color-vocals: #957fb8;
   --color-drums: #7e9cd8;
   --color-bass: #658594;
+  --color-guitar-center: #c8b38d;
+  --color-guitar-sides: #d6c5a0;
+  --color-other: #9fa685;
+
+  /* Text */
+  --color-text-primary: #e7e2d8;
+  --color-text-secondary: #aaa49a;
+  --color-text-tertiary: #7d7870;
+
+  /* Typography */
   --font-structural: Geist, "Segoe UI", sans-serif;
   --font-telemetry: "JetBrains Mono", Consolas, monospace;
+
+  /* Type scale (design-reference.md section 1) */
+  --text-headline-xl: 600 32px/38px var(--font-structural);
+  --text-headline-lg: 600 22px/28px var(--font-structural);
+  --text-headline-md: 500 16px/22px var(--font-structural);
+  --text-body-lg: 400 14px/20px var(--font-structural);
+  --text-body-md: 400 13px/18px var(--font-structural);
+  --text-body-sm: 400 11px/16px var(--font-structural);
+  --text-telemetry-lg: 400 16px/20px var(--font-telemetry);
+  --text-telemetry-md: 400 12px/16px var(--font-telemetry);
+  --text-telemetry-sm: 400 10px/14px var(--font-telemetry);
+  --text-label-caps: 400 9px/14px var(--font-telemetry);
+  --label-caps-tracking: .08em;
+
+  /* Shape */
   --radius-control: 4px;
   --radius-state: 2px;
+
+  /* Spacing: 4px sub-grid */
   --space-1: 2px;
   --space-2: 4px;
   --space-3: 8px;
   --space-4: 12px;
   --space-5: 16px;
+  --gutter: 12px;
+  --margin: 16px;
+
+  /* Elevation / overlay (design-reference.md section 1: tonal steps + 1px
+     borders, no ambient drop shadows; pressed states use an inset well;
+     overlays sit on --color-active with a blur and a translucent moss border) */
+  --elevation-pressed: inset 0 1px 2px rgba(0, 0, 0, .6);
+  --overlay-background: var(--color-active);
+  --overlay-blur: blur(8px);
+  --overlay-border: 1px solid rgba(138, 154, 123, .3);
+
+  /* Meter segment colors (design-reference.md section 1: slate low, moss
+     nominal, gold near full scale, rust at clip) */
+  --meter-low: var(--color-bass);
+  --meter-nominal: var(--color-moss);
+  --meter-high: var(--color-gold);
+  --meter-clip: var(--color-rust);
+
   font-family: var(--font-structural);
-  color: #e7e2d8;
+  color: var(--color-text-primary);
   background: var(--color-void);
 }
 
 * { box-sizing: border-box; }
 body { margin: 0; min-width: 768px; min-height: 100vh; background: var(--color-void); }
-.app-shell { min-height: 100vh; display: grid; grid-template-rows: 56px 1fr; }
-.app-header { display: flex; align-items: center; justify-content: space-between; padding: 0 var(--space-5); background: var(--color-panel); border-bottom: 1px solid var(--color-border); }
-.wordmark { font-size: 16px; font-weight: 600; letter-spacing: .01em; }
-.status { padding: var(--space-2) var(--space-3); border: 1px solid var(--color-moss); border-radius: var(--radius-state); color: var(--color-moss); font: 10px/14px var(--font-telemetry); text-transform: uppercase; letter-spacing: .08em; }
-.workspace { align-self: center; width: min(720px, calc(100% - 32px)); margin: auto; padding: 32px; border: 1px solid var(--color-border-module); border-radius: var(--radius-control); background: var(--color-control); }
-.eyebrow { margin: 0 0 var(--space-3); color: var(--color-gold); font: 9px/14px var(--font-telemetry); text-transform: uppercase; letter-spacing: .08em; }
-h1 { margin: 0 0 var(--space-4); font-size: 32px; line-height: 38px; font-weight: 600; }
-.workspace > p:last-child { margin: 0; color: #aaa49a; font-size: 14px; line-height: 20px; }
+
+.app-shell { min-height: 100vh; display: grid; grid-template-columns: 220px 1fr; grid-template-rows: 56px 1fr; grid-template-areas: "header header" "nav main"; }
+.app-header { grid-area: header; display: flex; align-items: center; justify-content: space-between; padding: 0 var(--space-5); background: var(--color-panel); border-bottom: 1px solid var(--color-border); }
+.wordmark { font: var(--text-headline-md); letter-spacing: .01em; }
+
+.engine-pill { display: inline-flex; align-items: center; gap: var(--space-2); padding: var(--space-2) var(--space-3); border: 1px solid var(--color-moss); border-radius: var(--radius-state); color: var(--color-moss); font: var(--text-telemetry-sm); text-transform: uppercase; letter-spacing: var(--label-caps-tracking); }
+.engine-pill[data-provider="wasm"] { border-color: var(--color-gold); color: var(--color-gold); }
+
+.app-nav { grid-area: nav; display: flex; flex-direction: column; justify-content: space-between; padding: var(--space-4) 0; background: var(--color-panel); border-right: 1px solid var(--color-border); }
+.nav-list { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: var(--space-1); }
+.nav-item { display: block; width: 100%; padding: var(--space-3) var(--space-5); border: none; background: transparent; color: var(--color-text-secondary); font: var(--text-body-md); text-align: left; cursor: pointer; border-radius: var(--radius-control); }
+.nav-item:hover { background: var(--color-active); color: var(--color-text-primary); }
+.nav-item[aria-current="page"] { background: var(--color-control); color: var(--color-text-primary); border-left: 2px solid var(--color-moss); }
+
+.storage-meter { margin: 0 var(--space-4); padding: var(--space-3); border: 1px solid var(--color-border); border-radius: var(--radius-control); background: var(--color-control); }
+.storage-meter-label { margin: 0 0 var(--space-2); color: var(--color-text-secondary); font: var(--text-body-sm); }
+.storage-meter-track { height: var(--space-2); border-radius: var(--radius-state); background: var(--color-void); overflow: hidden; }
+.storage-meter-fill { height: 100%; background: var(--color-moss); }
+
+.workspace { grid-area: main; padding: var(--space-5); overflow-y: auto; }
+.eyebrow { margin: 0 0 var(--space-3); color: var(--color-gold); font: var(--text-label-caps); text-transform: uppercase; letter-spacing: var(--label-caps-tracking); }
+h1 { margin: 0 0 var(--space-4); font: var(--text-headline-xl); }
+
+/* Upload page */
+.upload-page { display: flex; flex-direction: column; gap: var(--space-5); max-width: 880px; }
+.drop-zone { display: flex; flex-direction: column; align-items: center; justify-content: center; gap: var(--space-2); padding: 48px var(--space-5); border: 1px dashed var(--color-border-module); border-radius: var(--radius-control); background: var(--color-control); text-align: center; cursor: pointer; }
+.drop-zone[data-active="true"] { border-color: var(--color-moss); background: var(--color-active); }
+.drop-zone-title { margin: 0; font: var(--text-headline-md); color: var(--color-text-primary); }
+.drop-zone-constraints { margin: 0; color: var(--color-text-tertiary); font: var(--text-body-sm); }
+.drop-zone-browse { color: var(--color-moss); text-decoration: underline; background: none; border: none; padding: 0; font: inherit; cursor: pointer; }
+.drop-zone-rejection { margin: 0; color: var(--color-rust); font: var(--text-body-sm); }
+
+.file-card { display: flex; align-items: center; justify-content: space-between; gap: var(--space-4); padding: var(--space-4); border: 1px solid var(--color-border-module); border-radius: var(--radius-control); background: var(--color-control); }
+.file-card-name { margin: 0 0 var(--space-1); font: var(--text-body-lg); color: var(--color-text-primary); }
+.file-card-details { margin: 0; color: var(--color-text-secondary); font: var(--text-telemetry-sm); }
+.file-card-change { padding: var(--space-2) var(--space-3); border: 1px solid var(--color-border-module); border-radius: var(--radius-control); background: var(--color-panel); color: var(--color-text-primary); font: var(--text-body-sm); cursor: pointer; }
+
+.profile-cards { display: grid; grid-template-columns: 1fr 1fr; gap: var(--space-4); }
+.profile-card { display: flex; flex-direction: column; gap: var(--space-2); padding: var(--space-4); border: 1px solid var(--color-border-module); border-radius: var(--radius-control); background: var(--color-control); text-align: left; cursor: pointer; color: var(--color-text-primary); }
+.profile-card[aria-pressed="true"] { border-color: var(--color-moss); background: var(--color-active); }
+.profile-card-name { margin: 0; font: var(--text-headline-md); }
+.profile-card-stems { margin: 0; color: var(--color-text-secondary); font: var(--text-body-sm); }
+.profile-card-footprint { margin: 0; color: var(--color-text-tertiary); font: var(--text-telemetry-sm); }
+
+.before-you-start { display: grid; grid-template-columns: repeat(4, 1fr); gap: var(--space-4); padding: var(--space-4); border: 1px solid var(--color-border); border-radius: var(--radius-control); background: var(--color-panel); }
+.before-you-start-field dt { margin: 0 0 var(--space-1); color: var(--color-text-tertiary); font: var(--text-label-caps); text-transform: uppercase; letter-spacing: var(--label-caps-tracking); }
+.before-you-start-field dd { margin: 0; color: var(--color-text-primary); font: var(--text-telemetry-md); }
+
+.primary-action { align-self: flex-start; padding: var(--space-3) var(--space-5); border: none; border-radius: var(--radius-control); background: var(--color-moss); color: var(--color-void); font: var(--text-body-lg); font-weight: 600; cursor: pointer; }
+.primary-action:disabled { background: var(--color-border-module); color: var(--color-text-tertiary); cursor: not-allowed; }
+.primary-action:active:not(:disabled) { box-shadow: var(--elevation-pressed); }
+
+.submission-status { margin: 0; padding: var(--space-3); border-radius: var(--radius-control); font: var(--text-body-md); }
+.submission-status[data-tone="success"] { border: 1px solid var(--color-moss); color: var(--color-moss); }
+.submission-status[data-tone="refused"] { border: 1px solid var(--color-rust); color: var(--color-rust); }
