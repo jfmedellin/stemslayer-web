@@ -1,53 +1,64 @@
 # Stemslayer Web
 
-A free, static, in-browser stem separator: the web counterpart of the
-[Stemslayer desktop app](https://github.com/jfmedellin/separador-pistas).
-Separation runs entirely in the browser (Demucs compiled to WebAssembly/WebGPU);
-nothing is uploaded and there is no server.
+Stemslayer Web is a desktop-first, in-browser stem separator. It is the web
+counterpart of the [Stemslayer desktop app](https://github.com/jfmedellin/separador-pistas),
+not a port of its Python runtime. This repository is still in development; no
+public deployment or release is claimed here.
 
-## Status
+## Use it locally
 
-Phase 2 scaffold: the empty React shell and validation pipeline are in place.
-Product behavior, model downloads, audio processing, storage, and phone support
-are intentionally not part of this foundation.
+1. Start the development server using the commands below and open the local URL
+   printed by Vite.
+2. On **Upload**, drop or browse for one WAV, MP3, FLAC, OGG, or M4A file. Choose
+   **Basic** (four stems) or **Rock** (six stems), then start separation. The
+   selected model may need to download before processing begins.
+3. In **Library**, follow progress and open a ready track in **Mixer**. Library
+   also supports search, sorting, cancellation, retry, and removal.
+4. In **Mixer**, play the stems and adjust their levels, mute/solo, master
+   volume, and loop range. Go to **Export** to select stems and download them
+   as individual 32-bit float WAV files or a ZIP. Export downloads the stored
+   stems; it does not render your current mixer settings.
 
-## Relationship to the desktop app
+The audio file is processed in your browser, not uploaded to an application
+server. Model weights are downloaded from pinned third-party mirrors and
+verified before use. Results and catalog data stay in this browser's storage.
 
-This is a rewrite, not a port. The desktop app's design, stem profiles, mixer
-semantics and its `Tests/Portable` suite are the specification; its Python code
-does not run here.
+## Develop and check
 
-## Local setup
-
-Requirements: Node.js 24 and npm 11.
+Use Node.js 24 and npm 11. From the repository root:
 
 ```sh
 npm ci
-npx playwright install chromium
 npm run dev
 ```
 
-Run `npm run lint`, `npm run typecheck`, `npm test`, `npm run test:browser`,
-and `npm run build` before proposing changes. The browser target is desktop and
-landscape tablet; phone support remains deferred.
+The browser test suite uses Playwright Chromium. Install its browser once,
+then run the checks:
 
-## Model-weight risk
+```sh
+npx playwright install chromium
+npm run lint
+npm run typecheck
+npm test
+npm run test:browser
+npm run build
+```
 
-Demucs pretrained weights are not covered by the Demucs MIT license. Their
-maintainer describes them as scientific-use only. This project accepts that
-risk for its free, non-commercial use case, but **never redistributes model
-weights**. Future builds will fetch pinned third-party mirrors at runtime and
-verify their SHA-256 hashes. See the [license audit](docs/decisions/licenses.md)
-and [mirror decision](docs/decisions/weight-mirrors.md).
+## Browser and storage limits
 
-## Third-party notices
+- This phase targets desktop browsers; phone support is deferred. WebGPU is
+  preferred when available, with a WASM fallback that may be slower.
+- The model download and stored stems require substantial browser storage.
+  Separation may be refused when available quota is insufficient.
+- Browser storage is not a backup. Other browsers may evict data under disk
+  pressure; Safari can delete site data after seven days without a visit.
+  Download stems you want to keep. Retrying a failed or interrupted track may
+  require selecting the original file again.
 
-- ONNX Runtime and ONNX Runtime Web are MIT-licensed by Microsoft.
-- Demucs source code is MIT-licensed by Facebook Research; that grant does not
-  cover pretrained weights.
-- The planned Basic-profile mirror is `Ghilda/htdemucs-onnx`.
-- The planned Rock-profile mirror is `kramp/htdemucs-6s-webgpu-onnx`, with
-  `StemSplitio/htdemucs-6s-onnx` retained as a fallback reference.
+## Model licensing
 
-Mirror-hosted license tags do not override the upstream scientific-use limit.
-The repository contains no model files and does not claim redistribution rights.
+ONNX Runtime Web is MIT-licensed. Demucs source is MIT-licensed, but that grant
+does not cover its pretrained weights; the maintainer describes them as for
+scientific use only. This free, non-commercial project accepts that limitation
+and does not redistribute model files. See the [license audit](docs/decisions/licenses.md)
+and [pinned mirror decision](docs/decisions/weight-mirrors.md).
