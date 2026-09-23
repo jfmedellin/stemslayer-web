@@ -343,3 +343,46 @@ test('the desktop mixer keeps timeline labels and each lane gain beside its cont
   expect(row.querySelector('.mixer-lane-waveform')).not.toBeNull()
   expect(getComputedStyle(row).gridTemplateColumns.split(' ').length).toBe(3)
 })
+
+test('every rendered lane waveform reaches 3:1 contrast against its actual lane surface', async () => {
+  const testDeps = await buildDeps(baseTrack())
+  renderMixer(testDeps)
+  await waitForLoaded(testDeps.audioEngine)
+
+  const parseRgb = (value: string): [number, number, number] => {
+    const channels = value.match(/[\d.]+/g)?.slice(0, 3).map(Number)
+    if (channels === undefined || channels.length !== 3) throw new Error(`unsupported computed color: ${value}`)
+    return [channels[0]!, channels[1]!, channels[2]!]
+  }
+  const composite = (foreground: [number, number, number], background: [number, number, number], opacity: number) =>
+    foreground.map((channel, index) => channel * opacity + background[index]! * (1 - opacity)) as [number, number, number]
+  const luminance = (rgb: [number, number, number]): number => {
+    const linear = rgb.map((channel) => {
+      const normalized = channel / 255
+      return normalized <= 0.04045 ? normalized / 12.92 : ((normalized + 0.055) / 1.055) ** 2.4
+    })
+    return 0.2126 * linear[0]! + 0.7152 * linear[1]! + 0.0722 * linear[2]!
+  }
+  const ratio = (first: number, second: number): number => (Math.max(first, second) + 0.05) / (Math.min(first, second) + 0.05)
+
+  const laneIds = ['vocals', 'drums', 'bass', 'guitar_center', 'guitar_sides', 'other']
+  const measurements = laneIds.map((laneId) => {
+    const waveform = document.querySelector<SVGSVGElement>(`.mixer-lane-row[data-lane-id="${laneId}"] .mixer-lane-waveform`)
+    const path = waveform?.querySelector('path')
+    if (waveform === null || path === null || waveform === undefined || path === undefined) {
+      throw new Error(`waveform not found for lane: ${laneId}`)
+    }
+    const foreground = getComputedStyle(path).fill
+    const background = getComputedStyle(waveform).backgroundColor
+    const opacity = Number(getComputedStyle(path).opacity)
+    const foregroundRgb = parseRgb(foreground)
+    const backgroundRgb = parseRgb(background)
+    const compositedRgb = composite(foregroundRgb, backgroundRgb, opacity)
+    return { laneId, foreground, background, opacity, compositedRgb, contrast: ratio(luminance(compositedRgb), luminance(backgroundRgb)) }
+  })
+
+  expect(measurements).toHaveLength(6)
+  for (const measurement of measurements) {
+    expect(measurement.contrast, `${measurement.laneId}: ${JSON.stringify(measurement)}`).toBeGreaterThanOrEqual(3)
+  }
+})
