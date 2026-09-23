@@ -1,5 +1,5 @@
 import { afterEach, expect, test, vi } from 'vitest'
-import { userEvent } from 'vitest/browser'
+import { page, userEvent } from 'vitest/browser'
 import { flushSync } from 'react-dom'
 import { createRoot, type Root } from 'react-dom/client'
 import { expectedLaneKeys } from '../../application/separation-lane-keys'
@@ -133,8 +133,16 @@ test('the browse input is outside the interactive drop zone while keyboard brows
   zone.focus()
   await userEvent.keyboard('{Enter}')
   await userEvent.keyboard(' ')
-  expect(open).toHaveBeenCalledTimes(2)
+  zone.click()
+  expect(open).toHaveBeenCalledTimes(3)
   open.mockRestore()
+})
+
+test('the drop zone accessible name includes the visible file constraints', async () => {
+  await renderUploadPage()
+  expect(page.getByRole('button', {
+    name: /Drop one audio file or browse.*WAV, MP3, FLAC, OGG, M4A.*one file at a time/i,
+  }).length).toBe(1)
 })
 
 test('the selected-file state keeps the browse drop zone above the file card', async () => {

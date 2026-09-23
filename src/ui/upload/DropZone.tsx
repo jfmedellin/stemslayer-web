@@ -51,7 +51,6 @@ export function DropZone({ onFilesChosen }: DropZoneProps) {
         data-active={dragActive}
         role="button"
         tabIndex={0}
-        aria-label="Drop one audio file or browse"
         onClick={openBrowseDialog}
         onKeyDown={handleKeyDown}
         onDrop={handleDrop}
