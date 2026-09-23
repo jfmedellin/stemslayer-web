@@ -39,7 +39,7 @@ export function AppShell({ activeDestination, onNavigate, engineProvider, availa
           <span className="wordmark">Stemslayer</span>
           <span className="brand-badge">STUDIO</span>
         </div>
-        <span className="engine-pill" data-provider={engineProvider} aria-label="Inference engine">
+        <span className="engine-pill" data-provider={engineProvider}>
           {engineProvider === 'webgpu' ? 'WebGPU' : 'WASM'}
         </span>
       </header>
@@ -65,7 +65,7 @@ export function AppShell({ activeDestination, onNavigate, engineProvider, availa
           </ul>
         </div>
 
-        <div className="storage-meter" aria-label="Browser storage">
+        <div className="storage-meter">
           <p className="storage-meter-label">Browser storage</p>
           <p className="storage-meter-value">
             {availableBytes === null ? 'Checking…' : `${formatBytes(availableBytes)} free`}

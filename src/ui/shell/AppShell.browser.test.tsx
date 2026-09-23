@@ -44,6 +44,14 @@ test('shows the WebGPU/WASM engine pill and a storage meter reading', () => {
   expect(document.querySelector('.storage-meter')?.textContent).toMatch(/1\.9 GiB/)
 })
 
+test('engine and storage use visible labels instead of prohibited labels on generic elements', () => {
+  render('upload', () => undefined)
+  expect(document.querySelector('.engine-pill')?.hasAttribute('aria-label')).toBe(false)
+  expect(document.querySelector('.storage-meter')?.hasAttribute('aria-label')).toBe(false)
+  expect(document.querySelector('.engine-pill')?.textContent).toBe('WebGPU')
+  expect(document.querySelector('.storage-meter')?.textContent).toMatch(/Browser storage/)
+})
+
 test('the shared desktop shell presents a compact brand, destination markers, and real free space', () => {
   render('upload', () => undefined)
   expect(document.querySelector('.brand-badge')?.textContent).toBe('STUDIO')

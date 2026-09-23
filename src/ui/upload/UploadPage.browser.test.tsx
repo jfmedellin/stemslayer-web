@@ -1,4 +1,5 @@
-import { afterEach, expect, test } from 'vitest'
+import { afterEach, expect, test, vi } from 'vitest'
+import { userEvent } from 'vitest/browser'
 import { flushSync } from 'react-dom'
 import { createRoot, type Root } from 'react-dom/client'
 import { expectedLaneKeys } from '../../application/separation-lane-keys'
@@ -119,6 +120,21 @@ test('choosing a file through the browse input loads it the same way as a drop',
   await waitFor(() => document.querySelector('.file-card') !== null)
 
   expect(document.querySelector('.file-card-name')?.textContent).toBe('browsed.wav')
+})
+
+test('the browse input is outside the interactive drop zone while keyboard browse remains available', async () => {
+  await renderUploadPage()
+  const zone = document.querySelector<HTMLElement>('.drop-zone')
+  const input = document.querySelector<HTMLInputElement>('input[type="file"]')
+  if (zone === null || input === null) throw new Error('drop zone or file input not found')
+
+  expect(zone.contains(input)).toBe(false)
+  const open = vi.spyOn(input, 'click').mockImplementation(() => undefined)
+  zone.focus()
+  await userEvent.keyboard('{Enter}')
+  await userEvent.keyboard(' ')
+  expect(open).toHaveBeenCalledTimes(2)
+  open.mockRestore()
 })
 
 test('the selected-file state keeps the browse drop zone above the file card', async () => {

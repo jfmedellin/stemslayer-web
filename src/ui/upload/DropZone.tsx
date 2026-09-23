@@ -45,23 +45,25 @@ export function DropZone({ onFilesChosen }: DropZoneProps) {
   }
 
   return (
-    <div
-      className="drop-zone"
-      data-active={dragActive}
-      role="button"
-      tabIndex={0}
-      aria-label="Drop one audio file or browse"
-      onClick={openBrowseDialog}
-      onKeyDown={handleKeyDown}
-      onDrop={handleDrop}
-      onDragOver={handleDragOver}
-      onDragLeave={handleDragLeave}
-    >
-      <span className="drop-zone-icon" aria-hidden="true">↑</span>
-      <p className="drop-zone-title">Drop one audio file or browse</p>
-      <p className="drop-zone-constraints">
-        WAV, MP3, FLAC, OGG, M4A · one file at a time · up to about 15 minutes
-      </p>
+    <>
+      <div
+        className="drop-zone"
+        data-active={dragActive}
+        role="button"
+        tabIndex={0}
+        aria-label="Drop one audio file or browse"
+        onClick={openBrowseDialog}
+        onKeyDown={handleKeyDown}
+        onDrop={handleDrop}
+        onDragOver={handleDragOver}
+        onDragLeave={handleDragLeave}
+      >
+        <span className="drop-zone-icon" aria-hidden="true">↑</span>
+        <p className="drop-zone-title">Drop one audio file or browse</p>
+        <p className="drop-zone-constraints">
+          WAV, MP3, FLAC, OGG, M4A · one file at a time · up to about 15 minutes
+        </p>
+      </div>
       <input
         ref={inputRef}
         type="file"
@@ -72,6 +74,6 @@ export function DropZone({ onFilesChosen }: DropZoneProps) {
         onClick={(event) => event.stopPropagation()}
         onChange={handleInputChange}
       />
-    </div>
+    </>
   )
 }
