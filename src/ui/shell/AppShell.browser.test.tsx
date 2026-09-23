@@ -44,6 +44,25 @@ test('shows the WebGPU/WASM engine pill and a storage meter reading', () => {
   expect(document.querySelector('.storage-meter')?.textContent).toMatch(/1\.9 GiB/)
 })
 
+test('the shared desktop shell presents a compact brand, destination markers, and real free space', () => {
+  render('upload', () => undefined)
+  expect(document.querySelector('.brand-badge')?.textContent).toBe('STUDIO')
+  expect(document.querySelector('.nav-heading')?.textContent).toBe('Workspace')
+  expect(document.querySelectorAll('.nav-item').length).toBe(4)
+  for (const item of document.querySelectorAll('.nav-item')) {
+    expect(getComputedStyle(item, '::before').content).not.toBe('none')
+  }
+  expect(document.querySelector('.storage-meter-value')?.textContent).toMatch(/1\.9 GiB free/)
+  expect(document.querySelector('.storage-meter')?.textContent).not.toMatch(/used|total/i)
+})
+
+test('decorative destination markers do not alter each navigation button name', () => {
+  render('upload', () => undefined)
+  for (const label of ['Upload', 'Library', 'Mixer', 'Export']) {
+    expect(document.querySelector(`[aria-label="${label}"]`)).not.toBeNull()
+  }
+})
+
 test('renders the page content passed as children', () => {
   render('upload', () => undefined)
   expect(document.querySelector('main')?.textContent).toContain('page content')

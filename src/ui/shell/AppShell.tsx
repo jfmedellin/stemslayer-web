@@ -35,33 +35,42 @@ export function AppShell({ activeDestination, onNavigate, engineProvider, availa
   return (
     <div className="app-shell">
       <header className="app-header">
-        <span className="wordmark">Stemslayer</span>
+        <div className="brand-lockup">
+          <span className="wordmark">Stemslayer</span>
+          <span className="brand-badge">STUDIO</span>
+        </div>
         <span className="engine-pill" data-provider={engineProvider} aria-label="Inference engine">
           {engineProvider === 'webgpu' ? 'WebGPU' : 'WASM'}
         </span>
       </header>
 
       <nav className="app-nav" aria-label="Destinations">
-        <ul className="nav-list">
-          {NAV_DESTINATIONS.map((destination) => (
-            <li key={destination.id}>
-              <button
-                type="button"
-                className="nav-item"
-                aria-current={activeDestination === destination.id ? 'page' : undefined}
-                onClick={() => onNavigate(destination.id)}
-              >
-                {destination.label}
-              </button>
-            </li>
-          ))}
-        </ul>
+        <div>
+          <p className="nav-heading">Workspace</p>
+          <ul className="nav-list">
+            {NAV_DESTINATIONS.map((destination) => (
+              <li key={destination.id}>
+                <button
+                  type="button"
+                  className="nav-item"
+                  data-destination={destination.id}
+                  aria-label={destination.label}
+                  aria-current={activeDestination === destination.id ? 'page' : undefined}
+                  onClick={() => onNavigate(destination.id)}
+                >
+                  {destination.label}
+                </button>
+              </li>
+            ))}
+          </ul>
+        </div>
 
         <div className="storage-meter" aria-label="Browser storage">
-          <p className="storage-meter-label">
-            Browser storage: {availableBytes === null ? '—' : `${formatBytes(availableBytes)} free`}
-            {' · '}Results live in this browser only
+          <p className="storage-meter-label">Browser storage</p>
+          <p className="storage-meter-value">
+            {availableBytes === null ? 'Checking…' : `${formatBytes(availableBytes)} free`}
           </p>
+          <p className="storage-meter-note">Results live in this browser only.</p>
         </div>
       </nav>
 
