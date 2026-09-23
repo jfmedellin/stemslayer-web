@@ -209,6 +209,40 @@ test('"Download selected" downloads real, byte-identical bytes per checked lane'
   }
 })
 
+test('a failed lane is omitted from the visible checklist and both download actions', async () => {
+  const testDeps = await buildDeps(baseTrack())
+  const vocals = await testDeps.stemStore.readLane('stems/track-1', 'vocals')
+  const bass = await testDeps.stemStore.readLane('stems/track-1', 'bass')
+  await testDeps.stemStore.delete('stems/track-1')
+  await testDeps.stemStore.writeLane('stems/track-1', 'vocals', vocals)
+  await testDeps.stemStore.writeLane('stems/track-1', 'bass', bass)
+
+  renderExportPage(testDeps)
+  await waitFor(() => rowsRendered().length === 2)
+  expect(Array.from(rowsRendered(), (row) => row.getAttribute('data-lane-id'))).toEqual(['vocals', 'bass'])
+  expect(document.querySelectorAll('.export-stem-checkbox:checked')).toHaveLength(2)
+  expect(document.querySelector('.export-summary')?.textContent).toBe(`2 files · ${formatBytes(vocals.length + bass.length)}`)
+
+  const spy = spyCreateObjectURL()
+  try {
+    clickButton('.export-download-selected')
+    expect(spy.blobs).toHaveLength(2)
+    expect(new Uint8Array(await spy.blobs[0].arrayBuffer())).toEqual(vocals)
+    expect(new Uint8Array(await spy.blobs[1].arrayBuffer())).toEqual(bass)
+
+    spy.blobs.length = 0
+    clickButton('.export-download-zip')
+    expect(spy.blobs).toHaveLength(1)
+    const zipEntries = readZip(new Uint8Array(await spy.blobs[0].arrayBuffer()))
+    expect(zipEntries.map(({ fileName, bytes }) => ({ fileName, bytes }))).toEqual([
+      { fileName: 'Komorebi Master Mix-vocals.wav', bytes: vocals },
+      { fileName: 'Komorebi Master Mix-bass.wav', bytes: bass },
+    ])
+  } finally {
+    spy.restore()
+  }
+})
+
 test('"What you get" card and the storage notice show the exact fetched copy', async () => {
   const testDeps = await buildDeps(baseTrack())
   renderExportPage(testDeps)

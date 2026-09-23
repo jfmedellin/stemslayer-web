@@ -123,13 +123,31 @@ describe('exportTrack', () => {
     expect(result).toEqual({ ok: false, reason: 'track-not-found' })
   })
 
-  test('refuses cleanly (no throw) when a lane fails to read', async () => {
+  test('keeps readable lanes in profile order when other lanes fail to read', async () => {
     const catalog = new InMemoryCatalog()
     const stemStore = new InMemoryStemStore()
     const track = transitionTrack(transitionTrack(createTrack(basicInput), 'processing'), 'ready')
     await catalog.insert(track)
-    await stemStore.writeLane(basicInput.resultKey, 'vocals', laneBytes(toneStereo(0.3)))
-    // Every other lane is never written -> readLane rejects for them.
+    const vocals = laneBytes(toneStereo(0.3))
+    const bass = laneBytes(toneStereo(0.5))
+    await stemStore.writeLane(basicInput.resultKey, 'vocals', vocals)
+    await stemStore.writeLane(basicInput.resultKey, 'bass', bass)
+
+    const result = await exportTrack('track-basic', { catalog, stemStore })
+
+    expect(result.ok).toBe(true)
+    if (!result.ok) return
+    expect(result.entries.map((entry) => entry.laneId)).toEqual(['vocals', 'bass'])
+    expect(result.entries.map((entry) => entry.fileName)).toEqual(['Komorebi-vocals.wav', 'Komorebi-bass.wav'])
+    expect(result.entries[0].bytes).toEqual(vocals)
+    expect(result.entries[1].bytes).toEqual(bass)
+  })
+
+  test('refuses cleanly (no throw) when no lanes can be read', async () => {
+    const catalog = new InMemoryCatalog()
+    const stemStore = new InMemoryStemStore()
+    const track = transitionTrack(transitionTrack(createTrack(basicInput), 'processing'), 'ready')
+    await catalog.insert(track)
 
     const result = await exportTrack('track-basic', { catalog, stemStore })
 

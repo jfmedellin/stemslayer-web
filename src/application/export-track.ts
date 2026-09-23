@@ -47,10 +47,8 @@ function fileNameFor(track: Track, laneId: string): string {
  * aligned silence, per the same "still... exportable" rule already applied
  * to the Mixer.
  *
- * A track that can't be found, or whose stems fail to read, is a typed
- * refusal, never a throw — matching `openInMixer`'s own error-handling
- * shape. Unlike the Mixer there is no meaningful "fallback session" to
- * export, so failure here is a plain refusal with no placeholder data.
+ * A track that can't be found, or has no readable stems, is a typed
+ * refusal. Individual unreadable lanes do not block the rest of the batch.
  */
 export async function exportTrack(trackId: string, deps: ExportTrackDeps): Promise<ExportTrackResult> {
   const track = await deps.catalog.getById(trackId)
@@ -60,7 +58,7 @@ export async function exportTrack(trackId: string, deps: ExportTrackDeps): Promi
 
   try {
     const profile = resolveStemProfile(track.profileId)
-    const entries = await Promise.all(profile.lanes.map(async (lane): Promise<ExportTrackEntry> => {
+    const results = await Promise.allSettled(profile.lanes.map(async (lane): Promise<ExportTrackEntry> => {
       const bytes = await deps.stemStore.readLane(track.resultKey, lane.laneId)
       return Object.freeze({
         laneId: lane.laneId,
@@ -69,6 +67,10 @@ export async function exportTrack(trackId: string, deps: ExportTrackDeps): Promi
         bytes,
       })
     }))
+    const entries = results.flatMap((result) => result.status === 'fulfilled' ? [result.value] : [])
+    if (entries.length === 0) {
+      return Object.freeze({ ok: false, reason: 'stems-unavailable' as const })
+    }
     return Object.freeze({ ok: true, entries: Object.freeze(entries) })
   } catch {
     return Object.freeze({ ok: false, reason: 'stems-unavailable' as const })
