@@ -1,4 +1,4 @@
-import type { MouseEvent } from 'react'
+import type { KeyboardEvent, MouseEvent } from 'react'
 import type { MixerSessionLane } from '../../application/ports/audio-engine-port'
 import type { LoopRange } from '../../domain/mixer/mixer'
 import { formatDuration } from '../format/format-duration'
@@ -27,7 +27,7 @@ function percentOf(sample: number, frameCount: number): number {
 }
 
 /**
- * The shared lane strip: a click-to-seek timeline ruler carrying the A/B
+ * The shared lane strip: a pointer- and keyboard-seekable timeline ruler carrying the A/B
  * loop markers, the stacked lane rows, and one continuous playhead — a
  * single absolutely-positioned element spanning the whole strip, not drawn
  * per lane (ports `test_the_playhead_is_one_line_that_crosses_the_whole_strip`).
@@ -42,9 +42,44 @@ export function MixerStrip({
     onSeekTo(Math.round(fraction * frameCount))
   }
 
+  function handleTimelineKeyDown(event: KeyboardEvent<HTMLDivElement>): void {
+    const step = Math.max(1, Math.round(sampleRate))
+    let next: number
+    switch (event.key) {
+      case 'ArrowLeft':
+        next = currentSample - step
+        break
+      case 'ArrowRight':
+        next = currentSample + step
+        break
+      case 'Home':
+        next = 0
+        break
+      case 'End':
+        next = frameCount
+        break
+      default:
+        return
+    }
+    event.preventDefault()
+    event.stopPropagation() // The document shortcut otherwise seeks by ten seconds.
+    onSeekTo(Math.min(frameCount, Math.max(0, next)))
+  }
+
   return (
     <div className="mixer-strip">
-      <div className="mixer-timeline-ruler" onClick={handleTimelineClick}>
+      <div
+        className="mixer-timeline-ruler"
+        role="slider"
+        tabIndex={0}
+        aria-label="Track position"
+        aria-valuemin={0}
+        aria-valuemax={frameCount}
+        aria-valuenow={currentSample}
+        aria-valuetext={`${formatDuration(currentSample / sampleRate)} of ${formatDuration(frameCount / sampleRate)}`}
+        onClick={handleTimelineClick}
+        onKeyDown={handleTimelineKeyDown}
+      >
         {pendingLoopStart !== null && loopRange === null && (
           <div
             className="mixer-loop-marker mixer-loop-marker-pending"

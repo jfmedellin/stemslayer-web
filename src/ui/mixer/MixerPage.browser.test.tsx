@@ -1,6 +1,7 @@
 import { afterEach, expect, test } from 'vitest'
 import { flushSync } from 'react-dom'
 import { createRoot, type Root } from 'react-dom/client'
+import { userEvent } from 'vitest/browser'
 import { FakeAudioEnginePort } from '../../../tests/fakes/fake-audio-engine'
 import { InMemoryCatalog } from '../../../tests/fakes/in-memory-catalog'
 import { InMemoryStemStore } from '../../../tests/fakes/in-memory-stem-store'
@@ -249,6 +250,41 @@ test('skip buttons and arrow keys move exactly SKIP_SECONDS, clamped to the trac
 
   flushSync(() => document.dispatchEvent(new KeyboardEvent('keydown', { key: 'ArrowLeft' })))
   expect(testDeps.audioEngine.seekCalls.at(-1)).toBe(0)
+})
+
+test('the focused timeline seeks by one second and reaches both bounds without using global skip', async () => {
+  const testDeps = await buildDeps(baseTrack())
+  renderMixer(testDeps)
+  await waitForLoaded(testDeps.audioEngine)
+
+  const timeline = document.querySelector<HTMLElement>('.mixer-timeline-ruler')
+  if (timeline === null) throw new Error('timeline not found')
+  expect(timeline.getAttribute('role')).toBe('slider')
+  expect(timeline.getAttribute('aria-label')).toBe('Track position')
+  expect(timeline.getAttribute('aria-valuemin')).toBe('0')
+  expect(timeline.getAttribute('aria-valuemax')).toBe(String(FRAME_COUNT))
+  expect(timeline.getAttribute('aria-valuenow')).toBe('0')
+
+  timeline.focus()
+  await userEvent.keyboard('{ArrowRight}')
+  expect(testDeps.audioEngine.seekCalls.at(-1)).toBe(SAMPLE_RATE)
+  expect(timeline.getAttribute('aria-valuenow')).toBe(String(SAMPLE_RATE))
+  await userEvent.keyboard('{Home}')
+  expect(testDeps.audioEngine.seekCalls.at(-1)).toBe(0)
+  await userEvent.keyboard('{End}')
+  expect(testDeps.audioEngine.seekCalls.at(-1)).toBe(FRAME_COUNT)
+  await userEvent.keyboard('{ArrowRight}')
+  expect(testDeps.audioEngine.seekCalls.at(-1)).toBe(FRAME_COUNT)
+  await userEvent.keyboard('{ArrowLeft}')
+  expect(testDeps.audioEngine.seekCalls.at(-1)).toBe(FRAME_COUNT - SAMPLE_RATE)
+
+  timeline.style.width = '300px'
+  const rect = timeline.getBoundingClientRect()
+  flushSync(() => timeline.dispatchEvent(new MouseEvent('click', {
+    bubbles: true,
+    clientX: rect.left + rect.width / 2,
+  })))
+  expect(testDeps.audioEngine.seekCalls.at(-1)).toBe(FRAME_COUNT / 2)
 })
 
 test('A/B loop markers are settable, clearable, and L toggles between the confirmed region and none', async () => {
