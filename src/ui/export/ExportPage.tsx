@@ -86,6 +86,10 @@ export function ExportPage({ deps, trackId, onBackToMixer }: ExportPageProps) {
       setTrack(loadedTrack)
       setRows(withSampleRate)
       setCheckedLaneIds(new Set(withSampleRate.map((row) => row.laneId)))
+    }).catch(() => {
+      if (cancelled) return
+      setLoadFailed(true)
+      setRows([])
     })
 
     return () => {

@@ -1,4 +1,4 @@
-import { afterEach, expect, test } from 'vitest'
+import { afterEach, expect, test, vi } from 'vitest'
 import { flushSync } from 'react-dom'
 import { createRoot, type Root } from 'react-dom/client'
 import { InMemoryCatalog } from '../../../tests/fakes/in-memory-catalog'
@@ -293,4 +293,38 @@ test('an unknown track refuses cleanly with no stem list and no throw', async ()
 
   await waitFor(() => document.querySelector('.export-load-error') !== null)
   expect(rowsRendered()).toHaveLength(0)
+})
+
+test('a rejected catalog read exits loading and shows the existing error alert', async () => {
+  const testDeps = await buildDeps(baseTrack())
+  vi.spyOn(testDeps.catalog, 'getById').mockRejectedValue(new Error('catalog unavailable'))
+  renderExportPage(testDeps)
+
+  await waitFor(() => document.querySelector('.export-load-error') !== null)
+  expect(document.querySelector('.export-loading')).toBeNull()
+  expect(rowsRendered()).toHaveLength(0)
+})
+
+test('a rejected stale load cannot replace a newer track', async () => {
+  const testDeps = await buildDeps(baseTrack())
+  const newerTrack = baseTrack({ trackId: 'track-2', title: 'Newer Mix' })
+  await testDeps.catalog.insert(newerTrack)
+  const getById = testDeps.catalog.getById.bind(testDeps.catalog)
+  let rejectOldLoad: (reason: Error) => void = () => { throw new Error('old load did not start') }
+  const oldLoad = new Promise<Track | undefined>((_resolve, reject) => { rejectOldLoad = reject })
+  vi.spyOn(testDeps.catalog, 'getById').mockImplementation((id) => (
+    id === 'track-1' ? oldLoad : getById(id)
+  ))
+
+  renderExportPage(testDeps)
+  flushSync(() => root.render(
+    <ExportPage deps={testDeps.deps} trackId="track-2" onBackToMixer={() => {}} />,
+  ))
+  await waitFor(() => document.querySelector('.export-track-title')?.textContent?.includes('Newer Mix') === true)
+
+  rejectOldLoad(new Error('old catalog unavailable'))
+  await new Promise((resolve) => setTimeout(resolve, 0))
+  expect(document.querySelector('.export-track-title')?.textContent).toContain('Newer Mix')
+  expect(document.querySelector('.export-load-error')).toBeNull()
+  expect(document.querySelector('.export-loading')).toBeNull()
 })
