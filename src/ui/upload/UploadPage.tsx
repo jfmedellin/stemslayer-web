@@ -137,11 +137,13 @@ export function UploadPage({ deps, navigatorRef, queue }: UploadPageProps) {
 
   return (
     <section className="upload-page" aria-labelledby="upload-page-title">
-      <h1 id="upload-page-title">Upload</h1>
+      <header className="upload-intro">
+        <h1 id="upload-page-title">In-Browser Stem Separation</h1>
+        <p>Client-side audio separation. Your audio never leaves your device.</p>
+      </header>
 
-      {loaded === null
-        ? <DropZone onFilesChosen={handleFilesChosen} />
-        : <FileCard metadata={loaded.metadata} onChangeFile={handleChangeFile} />}
+      <DropZone onFilesChosen={handleFilesChosen} />
+      {loaded !== null && <FileCard metadata={loaded.metadata} onChangeFile={handleChangeFile} />}
 
       {rejectionMessage !== null && (
         <p className="drop-zone-rejection" role="status">{rejectionMessage}</p>

@@ -58,6 +58,18 @@ export function LaneRow({ lane, state, peaks, onMuteToggle, onSoloToggle, onGain
             S
           </button>
         </div>
+        <div className="mixer-lane-gain">
+          <input
+            type="range"
+            className="mixer-lane-gain-fader"
+            min={0}
+            max={100}
+            value={state.gainPercent}
+            onChange={(event) => onGainChange(Number(event.target.value))}
+            aria-label={`${lane.displayName} gain`}
+          />
+          <span className="mixer-lane-gain-readout">{formatGainDb(state.gainPercent)}</span>
+        </div>
       </div>
 
       <svg
@@ -69,18 +81,6 @@ export function LaneRow({ lane, state, peaks, onMuteToggle, onSoloToggle, onGain
         {peaks !== undefined && <path d={buildWaveformPath(peaks, WAVEFORM_WIDTH, WAVEFORM_HEIGHT)} />}
       </svg>
 
-      <div className="mixer-lane-gain">
-        <input
-          type="range"
-          className="mixer-lane-gain-fader"
-          min={0}
-          max={100}
-          value={state.gainPercent}
-          onChange={(event) => onGainChange(Number(event.target.value))}
-          aria-label={`${lane.displayName} gain`}
-        />
-        <span className="mixer-lane-gain-readout">{formatGainDb(state.gainPercent)}</span>
-      </div>
     </div>
   )
 }

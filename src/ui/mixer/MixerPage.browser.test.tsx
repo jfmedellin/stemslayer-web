@@ -11,6 +11,7 @@ import { ROCK_PROFILE } from '../../domain/stem-profile'
 import type { Track } from '../../domain/track'
 import { formatGainDb } from '../format/format-db'
 import { MixerPage, type MixerPageDeps } from './MixerPage'
+import '../tokens.css'
 
 let root: Root
 afterEach(() => root.unmount())
@@ -329,4 +330,16 @@ test('Back to library and Export stems only navigate; they never dispose the sha
   // track's id all the way out through `MixerPage`'s own `onExport` prop.
   expect(calls.lastExportedTrackId).toBe('track-1')
   expect(testDeps.audioEngine.disposed).toBe(false)
+})
+
+test('the desktop mixer keeps timeline labels and each lane gain beside its controls', async () => {
+  const testDeps = await buildDeps(baseTrack())
+  renderMixer(testDeps)
+  await waitForLoaded(testDeps.audioEngine)
+
+  expect(document.querySelectorAll('.mixer-timeline-tick').length).toBeGreaterThanOrEqual(3)
+  const row = document.querySelector('.mixer-lane-row')!
+  expect(row.querySelector('.mixer-lane-info .mixer-lane-gain')).not.toBeNull()
+  expect(row.querySelector('.mixer-lane-waveform')).not.toBeNull()
+  expect(getComputedStyle(row).gridTemplateColumns.split(' ').length).toBe(3)
 })

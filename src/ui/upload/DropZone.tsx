@@ -57,6 +57,7 @@ export function DropZone({ onFilesChosen }: DropZoneProps) {
       onDragOver={handleDragOver}
       onDragLeave={handleDragLeave}
     >
+      <span className="drop-zone-icon" aria-hidden="true">↑</span>
       <p className="drop-zone-title">Drop one audio file or browse</p>
       <p className="drop-zone-constraints">
         WAV, MP3, FLAC, OGG, M4A · one file at a time · up to about 15 minutes

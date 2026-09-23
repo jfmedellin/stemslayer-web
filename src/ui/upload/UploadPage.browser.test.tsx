@@ -5,6 +5,7 @@ import { expectedLaneKeys } from '../../application/separation-lane-keys'
 import { BASIC_PROFILE, ROCK_PROFILE } from '../../domain/stem-profile'
 import { buildFakeAppDependencies, type FakeAppDependencies } from '../../../tests/fakes/build-fake-app-dependencies'
 import { UploadPage } from './UploadPage'
+import '../tokens.css'
 
 let root: Root
 let container: HTMLDivElement
@@ -118,6 +119,22 @@ test('choosing a file through the browse input loads it the same way as a drop',
   await waitFor(() => document.querySelector('.file-card') !== null)
 
   expect(document.querySelector('.file-card-name')?.textContent).toBe('browsed.wav')
+})
+
+test('the selected-file state keeps the browse drop zone above the file card', async () => {
+  await renderUploadPage()
+  const input = document.querySelector<HTMLInputElement>('input[type="file"]')
+  if (input === null) throw new Error('file input not found')
+  chooseFilesViaInput(input, [buildWavFile('selected.wav', 2)])
+  await waitFor(() => document.querySelector('.file-card') !== null)
+
+  const page = document.querySelector('.upload-page')
+  const zone = page?.querySelector('.drop-zone')
+  const card = page?.querySelector('.file-card')
+  expect(zone).not.toBeNull()
+  expect(card).not.toBeNull()
+  expect(zone!.compareDocumentPosition(card!) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy()
+  expect(getComputedStyle(page!.querySelector('.primary-action')!).alignSelf).toBe('center')
 })
 
 test('selecting the Basic profile updates the primary action label and pressed state', async () => {

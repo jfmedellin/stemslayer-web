@@ -68,6 +68,10 @@ export function MixerStrip({
 
   return (
     <div className="mixer-strip">
+      <div className="mixer-strip-caption">
+        <span>Stems ({lanes.length})</span>
+        <span>Timeline</span>
+      </div>
       <div
         className="mixer-timeline-ruler"
         role="slider"
@@ -80,6 +84,13 @@ export function MixerStrip({
         onClick={handleTimelineClick}
         onKeyDown={handleTimelineKeyDown}
       >
+        <div className="mixer-timeline-ticks" aria-hidden="true">
+          {Array.from({ length: 5 }, (_, index) => (
+            <span key={index} className="mixer-timeline-tick">
+              {formatDuration((frameCount / sampleRate) * index / 4)}
+            </span>
+          ))}
+        </div>
         {pendingLoopStart !== null && loopRange === null && (
           <div
             className="mixer-loop-marker mixer-loop-marker-pending"
@@ -118,7 +129,9 @@ export function MixerStrip({
             onGainChange={(gainPercent) => onGainChange(lane.laneId, gainPercent)}
           />
         ))}
-        <div className="mixer-playhead" style={{ left: `${percentOf(currentSample, frameCount)}%` }} />
+        <div className="mixer-waveform-overlay" aria-hidden="true">
+          <div className="mixer-playhead" style={{ left: `${percentOf(currentSample, frameCount)}%` }} />
+        </div>
       </div>
     </div>
   )

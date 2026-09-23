@@ -20,22 +20,21 @@ export interface TrackHeaderProps {
 export function TrackHeader({ track, profileDisplayName, laneCount, onBackToLibrary, onExport }: TrackHeaderProps) {
   return (
     <header className="mixer-track-header">
-      <button type="button" className="mixer-back-to-library" onClick={onBackToLibrary}>
-        ← Back to library
-      </button>
-
       <div className="mixer-track-header-info">
         <h1 id="mixer-page-title" className="mixer-track-title">{track.title}</h1>
-        <p className="mixer-track-artist">{track.artist}</p>
         <p className="mixer-track-meta">
-          {formatDuration(track.durationSeconds)} · {profileDisplayName} · {laneCount} lanes
+          <span className="mixer-track-artist">{track.artist}</span> · {formatDuration(track.durationSeconds)} · {profileDisplayName} · {laneCount} stems
           {' · '}separated {formatRelativeTime(track.createdAtUtc)}
         </p>
       </div>
-
-      <button type="button" className="mixer-export-stems" onClick={() => onExport(track.trackId)}>
-        Export stems
-      </button>
+      <div className="mixer-track-actions">
+        <button type="button" className="mixer-back-to-library" onClick={onBackToLibrary}>
+          ← Back to library
+        </button>
+        <button type="button" className="mixer-export-stems" onClick={() => onExport(track.trackId)}>
+          Export stems
+        </button>
+      </div>
     </header>
   )
 }
