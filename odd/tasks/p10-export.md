@@ -1,6 +1,6 @@
 # P10 — Export: per-stem download and zip-all
 
-Status: opened 2026-09-22. Delivery strategy: `ask-on-risk`; chain strategy: `feature-branch-chain` (continuing P7a/P7b/P8/P9's convention). Developed locally on `feat/p7b-onnx-worker` (has P1..P9); publication base decided at closure.
+Status: complete locally 2026-09-23. Delivery strategy: `ask-on-risk`; chain strategy: `feature-branch-chain` (continuing P7a/P7b/P8/P9's convention). Developed locally on `feat/p7b-onnx-worker` (has P1..P9); publication remains a separate user decision.
 
 ## Objective
 
@@ -55,7 +55,7 @@ P1..P9 built everything up to real, audible, controllable stems, but there is st
   - Rollback boundary: revert `src/domain/zip/`, `src/application/export-track.ts`, `src/ui/export/`, the `App.tsx`/`TrackHeader.tsx`/`TrackRow.tsx`/`LibraryPage.tsx` trackId-threading changes, and this task's evidence; the Export nav destination reverts to `PlaceholderPane`, and Mixer's "Export stems" button reverts to not carrying a trackId. P1..P9 remain fully intact.
   - Forecast: ~300 authored lines (`phase-2-plan.md`'s own estimate).
 
-- [ ] **P10B — Close P10.**
+- [x] **P10B — Close P10.**
   - Route: parent-owned commits, assessments, final checks, and Engram mirror update.
   - Evidence: strict-TDD history (domain/application), integration-test evidence (ui), exact checks, authored counts, rollback boundaries, commit identities, and native outcomes, matching every prior phase's closure entry.
 
@@ -93,6 +93,8 @@ Forecast: P10A ~300+ lines (`phase-2-plan.md`'s own estimate; may exceed once th
 
 - 2026-09-23 — Native review correction `R3-partial-stem-export`: a rejected `readLane` previously caused `Promise.all` to discard every successful lane, contrary to the batch rule above. `Promise.allSettled` now preserves readable lanes in profile order and returns `stems-unavailable` only when none remain. Strict TDD observed RED for the mixed-lane unit test, then GREEN (6/6); the browser test verifies a two-lane checklist and byte-identical payloads from both download actions. Full checks: `npm test` 365/365 on retry (first run had an unrelated `tests/architecture.test.ts` timeout), `npm run test:browser` 126/126, `npm run typecheck`, `npm run lint`, `npm run build`, and `git diff --check` passed. Rollback only this correction's use-case logic, tests, and note; P10A itself remains intact.
 
+- 2026-09-23 — P10B closure: correction committed as `7a08e4b` (`fix(export): preserve readable stems when a lane fails`), 65 additions / 9 deletions across 4 files (74 authored lines, within the native 200-line correction budget). Parent independently inspected the diff and reran `npm test` (34 files / 365 tests passed). The delegated writer's post-correction full checks passed: browser 126/126, typecheck, lint, build, and `git diff --check`; the first Node run timed out in `tests/architecture.test.ts`, then the writer's retry and the parent's independent rerun passed. Native review assessed the P10 range from `18168d1` as medium risk, `review_due: true` (`slice_budget_reached`, 20 paths / 1,395 lines). User granted candidate-scoped consent; lineage `review-1fa2c93a43bc1a3a` found deterministic blocker `R3-partial-stem-export`, then targeted validation approved the bounded correction. Exact acknowledgement returned `gentle-ai.review-acknowledged/v1`, burned authority for corrected target `sha256:b4e651fb65f35b2c581bf6594e32d752a9d6817d4ceb5e5b2d5432c676f0963c` at revision `sha256:6e5aa4fea8db16d7ac3a874295a8bc5b27a8baea340ea0503d24bf903fad15d5`. Review outcome: granted and acknowledged. The review also reported non-blocking warning `R3-unhandled-export-load-rejection` (a rejected catalog read can leave Export on Loading); this is separate follow-up work, not part of this bounded correction. No push or PR was attempted.
+
 ## Next step
 
-P10A is done. Continue with P10B (close P10): parent-owned native review assessment on the P10A range, final full-repo checks, and Engram mirror update — same closure pattern as every prior phase.
+P10 is complete locally. Publication remains the user's decision. Track `R3-unhandled-export-load-rejection` as separate follow-up work; do not reopen this acknowledged review candidate.
