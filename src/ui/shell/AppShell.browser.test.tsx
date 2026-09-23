@@ -1,6 +1,8 @@
 import { afterEach, expect, test } from 'vitest'
 import { flushSync } from 'react-dom'
 import { createRoot, type Root } from 'react-dom/client'
+import { userEvent } from 'vitest/browser'
+import '../tokens.css'
 import { AppShell } from './AppShell'
 
 let root: Root
@@ -45,4 +47,18 @@ test('shows the WebGPU/WASM engine pill and a storage meter reading', () => {
 test('renders the page content passed as children', () => {
   render('upload', () => undefined)
   expect(document.querySelector('main')?.textContent).toContain('page content')
+})
+
+test('keyboard traversal follows the sidebar order and exposes a visible focus indicator', async () => {
+  render('upload', () => undefined)
+  const items = [...document.querySelectorAll<HTMLButtonElement>('.nav-item')]
+
+  items[0].focus()
+  for (const [index, item] of items.entries()) {
+    if (index > 0) await userEvent.tab()
+    expect(document.activeElement).toBe(item)
+    const style = getComputedStyle(item)
+    expect(style.outlineStyle).not.toBe('none')
+    expect(parseFloat(style.outlineWidth)).toBeGreaterThanOrEqual(2)
+  }
 })

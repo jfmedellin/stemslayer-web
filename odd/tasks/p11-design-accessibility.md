@@ -1,0 +1,38 @@
+# P11 — Desktop design and accessibility pass
+
+Status: in progress 2026-09-23. Authorized by the user's confirmation to fix the Export load error first, then continue P11. Local scope only on `feat/p7b-onnx-worker`; no push, PR, or deployment authorized. Delivery strategy: `ask-on-risk`; chain strategy: `feature-branch-chain` if delivery later requires slices.
+
+## Objective and why
+
+Complete the phase-2 desktop polish gate: align the React pages with the four redrawn Stitch screens and the adopted design tokens, improve keyboard focus, dark-palette contrast, and reduced-motion behavior, and replace the outdated README usage section. Do not add fake DAW controls or other features rejected in `docs/decisions/design-reference.md` section 3.
+
+## Sources and constraints
+
+- `docs/decisions/phase-2-plan.md` P11 and `docs/decisions/design-reference.md` sections 1, 3, and 5 govern scope. Section 5 already records the four redrawn Stitch screen IDs; do not redraw them again by assumption.
+- Desktop-first; mobile Stitch variants are explicitly out of phase-2 scope. Preserve English UI/artifact copy.
+- CSS currently lives in `src/ui/tokens.css`, not the older planned `src/styles/tokens.css`. React pages are Upload, Library, Mixer, and Export.
+- The exact Stitch screenshots are not present in this checkout and no Stitch connector is available in the current tool set. Do not claim manual screenshot parity until the reference images are supplied through an authorized source.
+- `axe-core` and Lighthouse are not installed locally. Do not download/install them or claim their checks passed without explicit authorization for any required external transfer. Existing browser tests and manual keyboard checks remain applicable.
+- Strict TDD is enabled by current AGENTS.md. Exact browser runner: `npm run test:browser`; focused file filters may be passed after `--`. Full functional checks: `npm test`, `npm run test:browser`, `npm run typecheck`, `npm run lint`, `npm run build`, `git diff --check`.
+- Forecast: ~300 authored changed lines from the phase-2 plan, advisory only; revise against observed work. Work-unit commits use Conventional Commits and no AI attribution.
+
+## Tasks
+
+- [x] **P11A — Keyboard, contrast, and motion baseline.** Route: delegated direct writer. Trigger: shared CSS and browser assertions across multiple React surfaces require preparation and 2+ non-trivial files. First establish a failing browser assertion for visible keyboard focus/reduced-motion behavior where testable, then implement the smallest systemic CSS/UI fix. Check focus order and contrast on the dark palette with locally available tools; do not invent axe/Lighthouse results. Acceptance: visible focus for keyboard users, no unintended focus traps/order regressions, reduced-motion preference honored, documented contrast evidence. Rollback: revert only the accessibility CSS/UI/test work unit.
+- [ ] **P11B — README usage and current architecture.** Route: direct inline if one understood document, otherwise delegated. Replace the stale empty-scaffold/future-model description with actual local usage and honest browser limitations. Acceptance: commands and feature descriptions match the current project and are read back; no deployment claim. Rollback: revert README work unit.
+- [ ] **P11C — Desktop visual parity.** Route: delegated direct writer after the four exact Stitch references are available. Compare Upload, Library, Mixer, and Export screenshots to the current React pages, identify only true gaps, then apply targeted polish using the existing token system. Acceptance: manual comparison evidence for all four screens without importing rejected section-3 features. Currently pending reference images/access.
+- [ ] **P11D — Accessibility audit and local closure.** Route: parent-owned checks/evidence. Run axe clean and Lighthouse accessibility >=90 only when those tools are available through authorized means, plus full tests/build. Record exact results, skipped/unavailable checks, commit identities, native review assessments, and remaining release decisions. Do not mark complete while required evidence is unavailable.
+
+## Acceptance criteria
+
+- [ ] Four desktop pages compared against the exact redrawn Stitch screens; justified visual gaps closed.
+- [ ] Keyboard focus order and visibility, dark-palette contrast, and reduced motion verified.
+- [ ] README explains actual upload → separate → library → mixer → export usage and local development.
+- [ ] axe reports no violations and Lighthouse accessibility score is at least 90, or P11 remains openly pending with those checks marked unavailable.
+- [ ] Full functional checks and native per-commit assessments are recorded; no unauthorized publication.
+
+## Progress and next step
+
+2026-09-23 — P10 Export completed and its independent rejected-load advisory fixed in `5cacde4`; the follow-up slice remains native `under_budget`, not reviewed. Read-only P11 mapping confirmed the current consolidated CSS, absent axe/Lighthouse dependencies, stale README, and missing local Stitch screenshots. Existing `design-reference.md` has the exact screen IDs and product restrictions, but not the rendered pixels. Proceed with independent P11A/P11B work; P11C/P11D remain pending missing visual/tooling inputs.
+
+2026-09-23 — P11A implemented. Browser RED: `npm run test:browser -- src/ui/shell/AppShell.browser.test.tsx` failed because the keyboard-focused nav button retained only a 1px UA outline. GREEN: 5/5 focused tests pass after a shared 2px gold `:focus-visible` rule for native controls and `tabindex` widgets. The browser test walks the four sidebar destinations in DOM order; no custom tab order or focus trap was introduced. `prefers-reduced-motion: reduce` now suppresses animation and transition duration and smooth scrolling globally; this media override was code-inspected, not independently emulated. Existing Dragon Atelier palette tokens were preserved. Small text previously using tertiary text on active surfaces (3.68:1) now uses secondary (6.51:1 on `#22211d`, 6.89:1 on `#1d1c19`); absent mixer lanes no longer fade their text. Gold focus ring is 7.89:1 on the darkest tested active surface. Rust text on active is 4.66:1; dark text on moss and rust controls is 6.24:1 and 5.42:1. Ratios computed locally from the WCAG relative-luminance formula against the CSS hex tokens; translucent/disabled and full-page visual states were not audited. Full checks: `npm test` 365/365; `npm run test:browser` 129/129; `npm run typecheck`, `npm run lint`, `npm run build`, and `git diff --check` passed. axe, Lighthouse, exact Stitch parity, and manual assistive-technology testing remain pending P11C/P11D. Rollback boundary: P11A changes in `src/ui/tokens.css` and `src/ui/shell/AppShell.browser.test.tsx` only.
