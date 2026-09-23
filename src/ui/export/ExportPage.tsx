@@ -138,15 +138,11 @@ export function ExportPage({ deps, trackId, onBackToMixer }: ExportPageProps) {
             track={track}
             profileDisplayName={profileDisplayName}
             stemCount={rows?.length ?? 0}
-            onBackToMixer={onBackToMixer}
           />
         )
         : (
           <header className="export-track-header">
-            <button type="button" className="export-back-to-mixer" onClick={onBackToMixer}>
-              ← Back to mixer
-            </button>
-            <h1 id="export-page-title">Export</h1>
+            <h1 id="export-page-title" className="export-track-title">Export stems</h1>
           </header>
         )}
 
@@ -157,59 +153,69 @@ export function ExportPage({ deps, trackId, onBackToMixer }: ExportPageProps) {
       )}
 
       {rows !== null && rows.length > 0 && (
-        <>
-          <div className="export-select-all">
-            <label>
-              <input
-                type="checkbox"
-                className="export-select-all-checkbox"
-                checked={allChecked}
-                onChange={toggleSelectAll}
-              />
-              Select all
-            </label>
+        <div className="export-content-grid">
+          <div className="export-main">
+            <div className="export-select-all">
+              <label>
+                <input
+                  type="checkbox"
+                  className="export-select-all-checkbox"
+                  checked={allChecked}
+                  onChange={toggleSelectAll}
+                />
+                Select all
+              </label>
+            </div>
+
+            <ul className="export-stem-list">
+              {rows.map((row) => (
+                <StemChecklistRow
+                  key={row.laneId}
+                  laneId={row.laneId}
+                  displayName={row.displayName}
+                  sizeBytes={row.bytes.length}
+                  sampleRateHz={row.sampleRateHz}
+                  checked={checkedLaneIds.has(row.laneId)}
+                  onToggle={() => toggleLane(row.laneId)}
+                />
+              ))}
+            </ul>
+
+            <p className="export-summary">{checkedRows.length} files · {formatBytes(totalCheckedBytes)}</p>
+
+            <div className="export-actions">
+              <button
+                type="button"
+                className="export-download-zip"
+                disabled={checkedRows.length === 0}
+                onClick={handleDownloadZip}
+              >
+                Download ZIP · {formatBytes(totalCheckedBytes)}
+              </button>
+              <button
+                type="button"
+                className="export-download-selected"
+                disabled={checkedRows.length === 0}
+                onClick={handleDownloadSelected}
+              >
+                Download selected
+              </button>
+            </div>
           </div>
 
-          <ul className="export-stem-list">
-            {rows.map((row) => (
-              <StemChecklistRow
-                key={row.laneId}
-                laneId={row.laneId}
-                displayName={row.displayName}
-                sizeBytes={row.bytes.length}
-                sampleRateHz={row.sampleRateHz}
-                checked={checkedLaneIds.has(row.laneId)}
-                onToggle={() => toggleLane(row.laneId)}
-              />
-            ))}
-          </ul>
-
-          <p className="export-summary">{checkedRows.length} files · {formatBytes(totalCheckedBytes)}</p>
-
-          <div className="export-actions">
-            <button
-              type="button"
-              className="export-download-zip"
-              disabled={checkedRows.length === 0}
-              onClick={handleDownloadZip}
-            >
-              Download ZIP · {formatBytes(totalCheckedBytes)} download
-            </button>
-            <button
-              type="button"
-              className="export-download-selected"
-              disabled={checkedRows.length === 0}
-              onClick={handleDownloadSelected}
-            >
-              Download selected
-            </button>
-          </div>
-
-          <WhatYouGetCard />
-
-          <p className="export-storage-notice">{STORAGE_NOTICE}</p>
-        </>
+          <aside className="export-sidebar" aria-label="Export information">
+            <WhatYouGetCard />
+            <section className="export-storage-panel" aria-labelledby="export-storage-title">
+              <h2 id="export-storage-title">Browser storage</h2>
+              <p className="export-storage-notice">{STORAGE_NOTICE}</p>
+            </section>
+          </aside>
+        </div>
       )}
+
+      <button type="button" className="export-back-to-mixer" onClick={onBackToMixer}>
+        ← Back to mixer
+      </button>
     </section>
   )
 }

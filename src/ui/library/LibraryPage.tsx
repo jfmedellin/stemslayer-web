@@ -136,13 +136,14 @@ export function LibraryPage({
 
   return (
     <section className="library-page" aria-labelledby="library-page-title">
-      <h1 id="library-page-title">Library</h1>
+      <h1 id="library-page-title" className="visually-hidden">Library</h1>
 
       <SearchSortControls
         searchQuery={searchQuery}
         onSearchChange={setSearchQuery}
         sortKey={sortKey}
         onSortChange={setSortKey}
+        visibleCount={visibleTracks.length}
       />
 
       {visibleTracks.length === 0

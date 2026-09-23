@@ -69,6 +69,11 @@ After T3, T5 and spike S2 closed, the four desktop screens were regenerated in t
 
 Common changes: product name Stemslayer, English copy, header reduced to a WebGPU pill and the avatar, sidebar Upload / Library / Mixer / Export with the storage meter, no fake DAW telemetry anywhere.
 
+The user-supplied desktop screenshot collages are preserved unchanged in this
+repository: [Upload and Library](../design/references/upload-library-desktop.png)
+and [Mixer and Export](../design/references/mixer-export-desktop.png). They are
+visual references; their example data is not a product requirement.
+
 Lane colours settled for the Rock profile: guitar centre gold `#c8b38d`, guitar sides light gold `#d6c5a0`, other muted olive `#9fa685` (closes the open item in section 1).
 
 Not redrawn: the mobile screens the user generated in Stitch in parallel still carry the old Spanish copy and the DragonStems features; mobile is out of scope for phase 2 (desktop-first, per `architecture.md`).

@@ -9,6 +9,7 @@ import { BASIC_PROFILE, ROCK_PROFILE } from '../../domain/stem-profile'
 import type { Track } from '../../domain/track'
 import { formatBytes } from '../format/format-bytes'
 import { ExportPage, type ExportPageDeps } from './ExportPage'
+import '../tokens.css'
 
 let root: Root
 afterEach(() => root.unmount())
@@ -130,8 +131,22 @@ test('renders the stem checklist with the fetched per-row copy format and the su
   expect(document.querySelector('.export-summary')?.textContent).toBe(
     `${BASIC_PROFILE.lanes.length} files · ${formatBytes(expectedBytes.length * BASIC_PROFILE.lanes.length)}`,
   )
-  expect(document.querySelector('.export-track-title')?.textContent).toBe(
+  expect(document.querySelector('.export-track-meta')?.textContent).toBe(
     `Komorebi Master Mix · Yui · 0:12 · ${BASIC_PROFILE.displayName.toUpperCase()} · ${BASIC_PROFILE.lanes.length} STEMS`,
+  )
+})
+
+test('separates Export title, real track metadata, and browser-storage panel', async () => {
+  const testDeps = await buildDeps(baseTrack())
+  renderExportPage(testDeps)
+  await waitFor(() => rowsRendered().length === BASIC_PROFILE.lanes.length)
+
+  expect(document.querySelector('.export-track-title')?.textContent).toBe('Export stems')
+  expect(document.querySelector('.export-track-meta')?.textContent).toContain('Komorebi Master Mix · Yui · 0:12')
+  expect(document.querySelector('.export-storage-panel h2')?.textContent).toBe('Browser storage')
+  expect(getComputedStyle(document.querySelector('.export-content-grid')!).display).toBe('grid')
+  expect(document.querySelector('.export-download-zip')?.textContent).toBe(
+    `Download ZIP · ${formatBytes((await testDeps.stemStore.readLane('stems/track-1', 'vocals')).length * BASIC_PROFILE.lanes.length)}`,
   )
 })
 
@@ -320,11 +335,11 @@ test('a rejected stale load cannot replace a newer track', async () => {
   flushSync(() => root.render(
     <ExportPage deps={testDeps.deps} trackId="track-2" onBackToMixer={() => {}} />,
   ))
-  await waitFor(() => document.querySelector('.export-track-title')?.textContent?.includes('Newer Mix') === true)
+  await waitFor(() => document.querySelector('.export-track-meta')?.textContent?.includes('Newer Mix') === true)
 
   rejectOldLoad(new Error('old catalog unavailable'))
   await new Promise((resolve) => setTimeout(resolve, 0))
-  expect(document.querySelector('.export-track-title')?.textContent).toContain('Newer Mix')
+  expect(document.querySelector('.export-track-meta')?.textContent).toContain('Newer Mix')
   expect(document.querySelector('.export-load-error')).toBeNull()
   expect(document.querySelector('.export-loading')).toBeNull()
 })

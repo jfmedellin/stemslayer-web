@@ -1,5 +1,7 @@
 import type { SeparateProgressEvent } from '../../application/separate'
 import type { Track } from '../../domain/track'
+import { resolveStemProfile } from '../../application/resolve-stem-profile'
+import { formatDuration } from '../format/format-duration'
 import { RetryReuploadPrompt } from './RetryReuploadPrompt'
 import {
   FAILED_FALLBACK_DETAIL,
@@ -40,6 +42,24 @@ function statusLabel(track: Track, progress: SeparateProgressEvent | undefined):
   }
 }
 
+const STATUS_NAMES: Readonly<Record<Track['status'], string>> = {
+  ready: 'Ready',
+  preparing: 'Preparing',
+  processing: 'Separating',
+  failed: 'Failed',
+  interrupted: 'Interrupted',
+  unavailable: 'Unavailable',
+}
+
+const STATUS_MARKS: Readonly<Record<Track['status'], string>> = {
+  ready: '♫',
+  preparing: '◌',
+  processing: '◌',
+  failed: '!',
+  interrupted: '!',
+  unavailable: '◇',
+}
+
 /** One Library row: copy and actions matching the fetched Stitch screen exactly, per status. */
 export function TrackRow({
   track,
@@ -56,15 +76,23 @@ export function TrackRow({
 }: TrackRowProps) {
   const retryable = track.status === 'failed' || track.status === 'interrupted' || track.status === 'unavailable'
   const cancellable = track.status === 'preparing' || track.status === 'processing'
+  const profile = resolveStemProfile(track.profileId)
 
   return (
     <li className="track-row" data-status={track.status} data-track-id={track.trackId}>
+      <span className="track-row-mark" aria-hidden="true">{STATUS_MARKS[track.status]}</span>
       <div className="track-row-info">
-        <p className="track-row-title">{track.title}</p>
-        <p className="track-row-artist">{track.artist}</p>
+        <div className="track-row-title-line">
+          <p className="track-row-title">{track.title}</p>
+          <span className="track-row-profile">{profile.displayName.toUpperCase()} · {profile.lanes.length} STEMS</span>
+        </div>
+        <p className="track-row-subline"><span className="track-row-artist">{track.artist}</span><span aria-hidden="true">·</span><span className="track-row-duration">{formatDuration(track.durationSeconds)}</span></p>
       </div>
 
-      <p className="track-row-status">{statusLabel(track, progress)}</p>
+      <div className="track-row-state">
+        <span className="track-row-badge">{STATUS_NAMES[track.status]}</span>
+        <p className="track-row-status">{statusLabel(track, progress)}</p>
+      </div>
 
       <div className="track-row-actions">
         {track.status === 'ready' && (

@@ -178,7 +178,7 @@ test('Library\'s "Export" action opens the Export page for that exact row\'s tra
   await new Promise((resolve, reject) => {
     const start = Date.now()
     const poll = setInterval(() => {
-      const title = document.querySelector('.export-track-title')?.textContent
+      const title = document.querySelector('.export-track-meta')?.textContent
       if (title?.startsWith('Second Song') === true) {
         clearInterval(poll)
         resolve(undefined)
@@ -189,7 +189,7 @@ test('Library\'s "Export" action opens the Export page for that exact row\'s tra
     }, 10)
   })
 
-  expect(document.querySelector('.export-track-title')?.textContent).not.toContain('First Song')
+  expect(document.querySelector('.export-track-meta')?.textContent).not.toContain('First Song')
 })
 
 // Same proof from Mixer's own entry point: "Export stems" must carry the
@@ -232,7 +232,7 @@ test('Mixer\'s "Export stems" opens the Export page for the track that is actual
   await new Promise((resolve, reject) => {
     const start = Date.now()
     const poll = setInterval(() => {
-      const title = document.querySelector('.export-track-title')?.textContent
+      const title = document.querySelector('.export-track-meta')?.textContent
       if (title?.startsWith('Only Song') === true) {
         clearInterval(poll)
         resolve(undefined)
@@ -243,5 +243,5 @@ test('Mixer\'s "Export stems" opens the Export page for the track that is actual
     }, 10)
   })
 
-  expect(document.querySelector('.export-track-title')?.textContent).toContain('Solo Artist')
+  expect(document.querySelector('.export-track-meta')?.textContent).toContain('Solo Artist')
 })

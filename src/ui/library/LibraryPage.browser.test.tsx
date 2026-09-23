@@ -11,6 +11,7 @@ import {
 } from '../../../tests/fakes/build-fake-app-dependencies'
 import { FakeHash } from '../../../tests/fakes/fake-hash'
 import { LibraryPage, type LibraryPageDeps } from './LibraryPage'
+import '../tokens.css'
 
 let root: Root
 let container: HTMLDivElement
@@ -147,6 +148,21 @@ test('renders all six row statuses with their designed copy and actions', async 
   expect(unavailable?.querySelector('.track-row-status')?.textContent)
     .toBe('Stems were removed by the browser. Separate again from the original file.')
   expect(unavailable?.querySelector('.track-row-retry')).not.toBeNull()
+})
+
+test('renders Library metadata and dense status rows from real track fields', async () => {
+  const testDeps = await buildSettledDeps()
+  await testDeps.catalog.insert(baseTrack({ trackId: 'ready-1', durationSeconds: 240 }))
+
+  renderLibrary(testDeps)
+  await waitFor(() => rowFor('ready-1') !== null)
+
+  const row = rowFor('ready-1')!
+  expect(document.querySelector('.library-count')?.textContent).toBe('1 track')
+  expect(row.querySelector('.track-row-profile')?.textContent).toBe('ROCK · 6 STEMS')
+  expect(row.querySelector('.track-row-duration')?.textContent).toBe('4:00')
+  expect(row.querySelector('.track-row-badge')?.textContent).toBe('Ready')
+  expect(getComputedStyle(row).display).toBe('grid')
 })
 
 test('processing/preparing rows reflect live queue progress', async () => {
