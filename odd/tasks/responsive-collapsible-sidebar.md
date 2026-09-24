@@ -31,7 +31,7 @@ The user wants more usable screen space and a layout that remains functional on 
 
 ## Acceptance Criteria
 - Desktop starts with navigation visible; the header toggle hides it and the workspace expands, and a second activation restores it.
-- The sidebar toggle sits at the far right of the header beside the engine badge, not between the brand and right-side controls, and uses a compact outlined sidebar/panel icon matching the supplied reference.
+- The sidebar toggle sits immediately to the left of the app name/brand, and uses a compact outlined sidebar/panel icon matching the supplied reference; the engine badge remains aligned at the right.
 - At narrow widths (existing 700px breakpoint), navigation is hidden by default and can be opened as an overlay without forcing horizontal page overflow.
 - On narrow screens the drawer closes after choosing a destination, activating the backdrop, or pressing Escape.
 - The toggle exposes correct accessible name/state/control relationship; hidden destinations are absent from keyboard tab order/accessibility tree.
@@ -59,6 +59,13 @@ The user wants more usable screen space and a layout that remains functional on 
   - Verification evidence: RED observed: focused test failed because `.header-controls` did not exist (11 passed, 1 failed); focused GREEN: 12/12 passed. Full browser suite: 22 files / 156 tests passed. `git diff --check` passed. `npm run typecheck` remains blocked only by the known unrelated TS2493 at `src/infrastructure/cache-api/cache-api-model-store.browser.test.ts:130`.
   - Commit: `f3fd1abb43ffbd780da8d7c5fbe9d35d6ea8f044` — `feat(shell): align navigation toggle with header controls`.
   - RDD assessment: disabled/unmanaged; no review.
+- [x] RSB-03 — Move the outlined navigation toggle from the right-side controls to the left of the app name.
+  - Route: delegated direct.
+  - Trigger evidence: user accepted the panel-icon treatment but refined its location; the existing three-file presentation implementation and browser regression must be updated together.
+  - Forecast: approximately 20–70 authored changed lines; delivery strategy remains `ask-on-risk`.
+  - Verification evidence: RED observed before implementation (12 tests passed, 1 new placement assertion failed); focused GREEN: 12/12 passed; independent parent spot-check: 12/12 passed; full browser suite: 22 files / 156 tests passed; `git diff --check` passed. `npm run typecheck` still reports only the known unrelated TS2493 at `src/infrastructure/cache-api/cache-api-model-store.browser.test.ts:130`.
+  - Commit: `1ca776f33f2bc5b565507330c5cafbb534089e98` — `fix(shell): move navigation toggle beside brand`.
+  - RDD assessment: disabled/unmanaged; no review.
 
 ## Progress
 - Read-only mapping confirmed the app shell always reserves 192px, with no collapse state or shell-level mobile navigation treatment.
@@ -69,12 +76,17 @@ The user wants more usable screen space and a layout that remains functional on 
 - Focused browser suite: `npm run test:browser -- --run src/ui/shell/AppShell.browser.test.tsx` — 11/11 passed.
 - Full browser suite: `npm run test:browser` — 22 files / 155 tests passed.
 - Typecheck: `npm run typecheck` — known unrelated TS2493 failure at `src/infrastructure/cache-api/cache-api-model-store.browser.test.ts:130`.
-- User feedback: first iteration placed the navigation toggle in the middle of the header. The supplied reference places the sidebar control at the far right; RSB-02 corrects alignment and icon without changing navigation behavior.
+- User feedback: first iteration placed the navigation toggle in the middle of the header. RSB-02 moved it to the far right with the panel icon; the user liked that treatment but asked to move the icon beside the app name on the left, which is tracked as RSB-03.
 - RSB-02 uses a right-aligned header-controls group containing the engine badge and toggle; the toggle now renders a compact decorative SVG panel outline while preserving its accessible name, expanded state, and controls relationship.
 - RSB-02 regression: `npm run test:browser -- --run src/ui/shell/AppShell.browser.test.tsx` — 12/12 passed after observing RED (11 passed, 1 failed before implementation).
 - RSB-02 full browser suite: `npm run test:browser` — 22 files / 156 tests passed.
 - RSB-02 typecheck: `npm run typecheck` — failed with only the known unrelated TS2493 at `src/infrastructure/cache-api/cache-api-model-store.browser.test.ts:130`.
 - RSB-02 whitespace validation: `git diff --check` — passed.
+- RSB-03 places the outlined toggle immediately to the left of the brand; the engine badge remains on the far right. Accessibility labels, expanded state, and control relationship are unchanged.
+- RSB-03 focused browser suite: 12/12 passed after the new left-of-brand regression failed before implementation; parent spot-check also passed 12/12.
+- RSB-03 full browser suite: 22 files / 156 tests passed.
+- RSB-03 typecheck: `npm run typecheck` — failed only with the known unrelated TS2493 at `src/infrastructure/cache-api/cache-api-model-store.browser.test.ts:130`.
+- RSB-03 whitespace validation: `git diff --check` — passed.
 
 ## Next Step
-RSB-01 and RSB-02 are complete; no additional work is pending for this feature.
+RSB-01, RSB-02, and RSB-03 are complete; no sidebar placement work remains.
