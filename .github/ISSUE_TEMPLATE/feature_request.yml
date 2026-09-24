@@ -1,0 +1,40 @@
+name: Feature request
+description: Propose a feature or improvement for Stemslayer Web
+title: "[Feature]: "
+labels:
+  - enhancement
+  - type:feature
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Before submitting, search existing issues to avoid duplicates.
+  - type: textarea
+    id: problem
+    attributes:
+      label: What problem would this solve?
+      description: Describe the user need or friction.
+      placeholder: I need...
+    validations:
+      required: true
+  - type: textarea
+    id: proposed_solution
+    attributes:
+      label: What would you like to happen?
+      description: Describe the expected behavior.
+    validations:
+      required: true
+  - type: textarea
+    id: alternatives
+    attributes:
+      label: Alternatives considered
+      description: Mention any alternatives or workarounds you considered.
+    validations:
+      required: false
+  - type: textarea
+    id: additional_context
+    attributes:
+      label: Additional context
+      description: Add screenshots or other context if useful.
+    validations:
+      required: false
