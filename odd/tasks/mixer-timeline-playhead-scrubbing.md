@@ -48,7 +48,7 @@ The user requested the ruler and arrow/flag shown in the reference so listeners 
   - Forecast: approximately 100–180 authored changed lines; one coherent Mixer navigation work unit.
   - Verification evidence: strict-TDD RED showed 2 new failures (missing ticks/flag and no drag seeking); GREEN focused suite passed 19/19, full browser suite passed 22 files / 161 tests, and `git diff --check` passed. `npm run typecheck` remains blocked only by the unrelated pre-existing TS2493 at `src/infrastructure/cache-api/cache-api-model-store.browser.test.ts:130`.
   - Runtime: N/A — local browser UI behavior is exercised by the browser test runner; no external runtime boundary is part of this task.
-  - Commit: pending.
+  - Commit: `c3e04a54092e13bea964f3223458914cf598e52b` (`feat(mixer): add timeline ruler scrubbing`).
   - RDD assessment: disabled/unmanaged; no review.
 
 ## Progress
@@ -61,4 +61,4 @@ The user requested the ruler and arrow/flag shown in the reference so listeners 
 - Check evidence: focused `npm run test:browser -- src/ui/mixer/MixerPage.browser.test.tsx` passed (19/19); full `npm run test:browser` passed (22 files, 161 tests); `npm run typecheck` failed only at the known unrelated TS2493 line; `git diff --check` passed.
 
 ## Next Step
-Commit the verified MTR-01 work unit, record its commit identity here and in the Engram mirror, and confirm the final working tree leaves unrelated `odd/tasks/first-public-release.md` untouched.
+MTR-01 is complete. The implementation is committed locally; the unrelated untracked `odd/tasks/first-public-release.md` remains untouched. No remote work was authorized or performed.
