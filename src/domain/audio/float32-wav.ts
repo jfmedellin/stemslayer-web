@@ -1,5 +1,6 @@
 /**
- * 32-bit float PCM WAV codec, byte-identical to the desktop encoder
+ * 32-bit float PCM WAV codec, byte-identical to the desktop encoder for
+ * finite samples within [-1, 1]
  * (`SeparationWorker/engine/wav.py:encode_float32_wav`): `RIFF`/`WAVEfmt `
  * with a 16-byte fmt chunk (`<HHIIHH` = format tag 3 `WAVE_FORMAT_IEEE_FLOAT`,
  * channel count, sample rate, byte rate, block align, 32 bits per sample),
@@ -37,31 +38,20 @@ export interface DecodedFloat32Wav {
   readonly planar: Float32Array[]
 }
 
-/**
- * Thrown when the audio peak exceeds the allowed absolute peak of 1, or
- * contains a non-finite sample — the same `export.clipping` refusal the
- * desktop encoder applies (`wav.py`'s `ExportError`), carrying the peak.
- */
-export class ClippingError extends Error {
-  constructor(readonly peak: number) {
-    super(
-      `export.clipping Export peak ${peak} exceeds the allowed absolute peak of 1. ` +
-        'Reduce mixer gain and export again; no normalization or limiting was applied.',
-    )
-    this.name = 'ClippingError'
+/** Non-finite audio samples cannot be encoded as valid stems or sources. */
+export class NonFiniteAudioError extends Error {
+  constructor(readonly sample: number) {
+    super(`audio.non_finite_sample Audio contains a non-finite sample (${sample}); the WAV could not be encoded.`)
+    this.name = 'NonFiniteAudioError'
   }
 }
 
-function computePeak(planar: readonly Float32Array[]): number {
-  let peak = 0
+function assertFiniteSamples(planar: readonly Float32Array[]): void {
   for (const channel of planar) {
     for (const sample of channel) {
-      if (!Number.isFinite(sample)) return Math.abs(sample)
-      const abs = Math.abs(sample)
-      if (abs > peak) peak = abs
+      if (!Number.isFinite(sample)) throw new NonFiniteAudioError(sample)
     }
   }
-  return peak
 }
 
 function writeAscii(bytes: Uint8Array, offset: number, text: string): void {
@@ -75,15 +65,13 @@ function readAscii(bytes: Uint8Array, offset: number, length: number): string {
 }
 
 /**
- * Encodes planar float32 audio into the desktop's exact WAV byte layout.
- * Rejects a peak above 1.0 or a non-finite sample with a typed
- * `ClippingError`, as the desktop does; no normalization or limiting.
+ * Encodes planar float32 audio into the desktop's WAV byte layout.
+ * Preserves finite model samples even above 1; rejects non-finite samples.
+ * Unlike the desktop encoder, raw stem publication does not apply a future
+ * rendered-mixdown clipping policy. No normalization or limiting occurs.
  */
 export function encodeFloat32Wav({ sampleRate, planar }: EncodeFloat32WavInput): Uint8Array {
-  const peak = computePeak(planar)
-  if (!Number.isFinite(peak) || peak > 1) {
-    throw new ClippingError(peak)
-  }
+  assertFiniteSamples(planar)
 
   const channelCount = planar.length
   const frameCount = channelCount > 0 ? planar[0].length : 0

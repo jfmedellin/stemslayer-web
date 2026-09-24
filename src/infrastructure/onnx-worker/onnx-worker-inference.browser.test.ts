@@ -31,17 +31,17 @@ async function fixtureBytes(): Promise<Uint8Array> {
   return new Uint8Array(await response.arrayBuffer())
 }
 
-function sourceWav(): Uint8Array {
-  const left = Float32Array.from({ length: FRAME_COUNT }, (_, index) => Math.sin(index / 31) * INPUT_GAIN)
-  const right = Float32Array.from({ length: FRAME_COUNT }, (_, index) => Math.cos(index / 47) * INPUT_GAIN)
+function sourceWav(gain = INPUT_GAIN): Uint8Array {
+  const left = Float32Array.from({ length: FRAME_COUNT }, (_, index) => Math.sin(index / 31) * gain)
+  const right = Float32Array.from({ length: FRAME_COUNT }, (_, index) => Math.cos(index / 47) * gain)
   return encodeFloat32Wav({ sampleRate: 44_100, planar: [left, right] })
 }
 
-function job(resultKey: string): InferenceJob {
+function job(resultKey: string, gain = INPUT_GAIN): InferenceJob {
   return {
     trackId: `track-${resultKey}`,
     profile: BASIC_PROFILE,
-    source: sourceWav(),
+    source: sourceWav(gain),
     resultKey,
   }
 }
@@ -75,6 +75,19 @@ describe('OnnxWorkerInference with the real module Worker', () => {
         expect(stored.planar[1][frame]).toBeCloseTo(decodedSource.planar[1][frame] * BASIC_FIXTURE_GAIN, 4)
       }
     }
+  }, 30_000)
+
+  test('persists finite model peaks above 1 unchanged through the real Worker and OPFS', async () => {
+    const inference = await adapter()
+    const gain = 0.2
+
+    const keys = await inference.run(job('over-range', gain), () => undefined).result
+
+    expect(keys).toEqual(BASIC_PROFILE.lanes.map(({ laneId }) => `over-range/${laneId}`))
+    const stored = decodeFloat32Wav(await stemStore.readLane('over-range', BASIC_PROFILE.lanes[0].laneId))
+    const expected = decodeFloat32Wav(sourceWav(gain)).planar[0][511] * BASIC_FIXTURE_GAIN
+    expect(Math.abs(expected)).toBeGreaterThan(1)
+    expect(stored.planar[0][511]).toBeCloseTo(expected, 4)
   }, 30_000)
 
   test('terminate is idempotent, rejects with InferenceCancelled, and removes the whole result', async () => {

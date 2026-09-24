@@ -1,6 +1,6 @@
 import { describe, expect, test } from 'vitest'
 
-import { ClippingError, decodeFloat32Wav, encodeFloat32Wav } from '../../src/domain/audio/float32-wav'
+import { NonFiniteAudioError, decodeFloat32Wav, encodeFloat32Wav } from '../../src/domain/audio/float32-wav'
 
 // Golden fixture: bytes computed by the desktop encoder
 // (`SeparationWorker/engine/wav.py:encode_float32_wav`), read-only reference
@@ -67,24 +67,24 @@ describe('encodeFloat32Wav', () => {
     }
   })
 
-  test('rejects a peak above 1.0 with a typed export.clipping error carrying the peak', () => {
-    expect(() => encodeFloat32Wav({ sampleRate: 44_100, planar: [Float32Array.from([0.5, -1.25])] })).toThrow(
-      ClippingError,
-    )
-    try {
-      encodeFloat32Wav({ sampleRate: 44_100, planar: [Float32Array.from([0.5, -1.25])] })
-      expect.unreachable()
-    } catch (error) {
-      expect(error).toBeInstanceOf(ClippingError)
-      expect((error as ClippingError).peak).toBeCloseTo(1.25, 5)
-      expect((error as ClippingError).message).toContain('export.clipping')
-      expect((error as ClippingError).message.toLowerCase()).toContain('gain')
-    }
+  test('preserves finite samples above absolute peak 1 without attenuation or limiting', () => {
+    const planar = [Float32Array.from([0.5, -1.25, 1.5])]
+    const decoded = decodeFloat32Wav(encodeFloat32Wav({ sampleRate: 44_100, planar }))
+
+    expect(Array.from(decoded.planar[0])).toEqual(Array.from(planar[0]))
   })
 
-  test('rejects a non-finite sample as a typed export.clipping error', () => {
-    expect(() =>
-      encodeFloat32Wav({ sampleRate: 44_100, planar: [Float32Array.from([0.1, Number.NaN])] }),
-    ).toThrow(ClippingError)
-  })
+  test.each([Number.NaN, Number.POSITIVE_INFINITY, Number.NEGATIVE_INFINITY])(
+    'rejects non-finite sample %s with an accurate typed error', (sample) => {
+      expect(() => encodeFloat32Wav({ sampleRate: 44_100, planar: [Float32Array.from([0.1, sample])] }))
+        .toThrow(NonFiniteAudioError)
+      try {
+        encodeFloat32Wav({ sampleRate: 44_100, planar: [Float32Array.from([0.1, sample])] })
+        expect.unreachable()
+      } catch (error) {
+        expect((error as Error).message).toContain('non-finite')
+        expect((error as Error).message).not.toContain('mixer gain')
+      }
+    },
+  )
 })
