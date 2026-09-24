@@ -221,6 +221,39 @@ test('spacebar toggles play/pause only while mounted; unmounting removes the glo
   expect(testDeps.audioEngine.playCalls).toBe(1)
 })
 
+test('primary transport actions are compact icon buttons with accessible names and an active loop state', async () => {
+  const testDeps = await buildDeps(baseTrack())
+  renderMixer(testDeps)
+  await waitForLoaded(testDeps.audioEngine)
+
+  const back = document.querySelector<HTMLButtonElement>('.mixer-skip-back')
+  const playback = document.querySelector<HTMLButtonElement>('.mixer-play-pause')
+  const forward = document.querySelector<HTMLButtonElement>('.mixer-skip-forward')
+  const loop = document.querySelector<HTMLButtonElement>('.mixer-loop-toggle')
+  if (back === null || playback === null || forward === null || loop === null) {
+    throw new Error('primary transport buttons not found')
+  }
+
+  expect(back.getAttribute('aria-label')).toBe('Seek backward 10 seconds')
+  expect(playback.getAttribute('aria-label')).toBe('Play')
+  expect(forward.getAttribute('aria-label')).toBe('Seek forward 10 seconds')
+  expect(loop.getAttribute('aria-label')).toBe('Enable loop')
+  expect(loop.getAttribute('aria-pressed')).toBe('false')
+  expect(back.querySelector('svg')?.getAttribute('aria-hidden')).toBe('true')
+  expect(playback.querySelector('svg')?.getAttribute('aria-hidden')).toBe('true')
+  expect(forward.querySelector('svg')?.getAttribute('aria-hidden')).toBe('true')
+  expect(loop.querySelector('svg')?.getAttribute('aria-hidden')).toBe('true')
+
+  clickButton('.mixer-play-pause')
+  expect(testDeps.audioEngine.playCalls).toBe(1)
+  expect(playback.getAttribute('aria-label')).toBe('Pause')
+
+  // A/B actions remain separately available next to the new loop toggle.
+  expect(document.querySelector('.mixer-set-loop-a')).not.toBeNull()
+  expect(document.querySelector('.mixer-set-loop-b')).not.toBeNull()
+  expect(document.querySelector('.mixer-clear-loop')).not.toBeNull()
+})
+
 test('skip buttons and arrow keys move exactly SKIP_SECONDS, clamped to the track bounds', async () => {
   const testDeps = await buildDeps(baseTrack())
   renderMixer(testDeps)
@@ -303,16 +336,26 @@ test('A/B loop markers are settable, clearable, and L toggles between the confir
   expect(document.querySelector('.mixer-loop-marker-start')?.textContent).toBe('A 0:00')
   expect(document.querySelector('.mixer-loop-marker-end')?.textContent).toBe('B 0:10')
 
+  const loopToggle = document.querySelector<HTMLButtonElement>('.mixer-loop-toggle')
+  if (loopToggle === null) throw new Error('loop toggle not found')
+  expect(loopToggle.getAttribute('aria-pressed')).toBe('true')
+  clickButton('.mixer-loop-toggle')
+  expect(loopToggle.getAttribute('aria-pressed')).toBe('false')
+  expect(loopToggle.getAttribute('aria-label')).toBe('Enable loop')
+  expect(testDeps.audioEngine.loopRangeCalls.at(-1)).toBeNull()
+
   clickButton('.mixer-clear-loop')
   expect(testDeps.audioEngine.loopRangeCalls.at(-1)).toBeNull()
 
-  // 'L' restores the last confirmed region.
+  // 'L' and the button use the same toggle state and restore the saved region.
   flushSync(() => document.dispatchEvent(new KeyboardEvent('keydown', { key: 'l' })))
   expect(testDeps.audioEngine.loopRangeCalls.at(-1)).toEqual({ startSample: 0, endSample: SKIP_SAMPLES })
+  expect(loopToggle.getAttribute('aria-pressed')).toBe('true')
 
-  // 'L' again clears it.
-  flushSync(() => document.dispatchEvent(new KeyboardEvent('keydown', { key: 'l' })))
+  // The button turns looping off again, just like 'L'.
+  clickButton('.mixer-loop-toggle')
   expect(testDeps.audioEngine.loopRangeCalls.at(-1)).toBeNull()
+  expect(loopToggle.getAttribute('aria-pressed')).toBe('false')
 })
 
 test('Back to library and Export stems only navigate; they never dispose the shared engine', async () => {

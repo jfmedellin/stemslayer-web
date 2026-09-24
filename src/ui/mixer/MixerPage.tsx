@@ -301,6 +301,7 @@ export function MixerPage({ deps, trackId, onBackToLibrary, onExport }: MixerPag
             sampleRate={session.sampleRate}
             masterGainPercent={masterGainPercent}
             onTogglePlayback={handleTogglePlayback}
+            onToggleLoop={handleToggleLoopKey}
             onSkipBack={() => handleSkip(-1)}
             onSkipForward={() => handleSkip(1)}
             onMasterGainChange={setMasterGainPercent}
@@ -309,6 +310,7 @@ export function MixerPage({ deps, trackId, onBackToLibrary, onExport }: MixerPag
             onClearLoop={handleClearLoop}
             hasPendingLoopStart={pendingLoopStart !== null}
             hasLoopRange={loopRange !== null}
+            isLoopActive={loopRange !== null}
           />
         </>
       )}
