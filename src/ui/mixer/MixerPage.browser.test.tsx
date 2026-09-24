@@ -1,7 +1,7 @@
 import { afterEach, expect, test } from 'vitest'
 import { flushSync } from 'react-dom'
 import { createRoot, type Root } from 'react-dom/client'
-import { userEvent } from 'vitest/browser'
+import { page, userEvent } from 'vitest/browser'
 import { FakeAudioEnginePort } from '../../../tests/fakes/fake-audio-engine'
 import { InMemoryCatalog } from '../../../tests/fakes/in-memory-catalog'
 import { InMemoryStemStore } from '../../../tests/fakes/in-memory-stem-store'
@@ -388,6 +388,33 @@ test('the desktop mixer keeps timeline labels and each lane gain beside its cont
   expect(row.querySelector('.mixer-lane-info .mixer-lane-gain')).not.toBeNull()
   expect(row.querySelector('.mixer-lane-waveform')).not.toBeNull()
   expect(getComputedStyle(row).gridTemplateColumns.split(' ').length).toBe(3)
+})
+
+test('mixer expands across a maximized workspace and distributes height across lanes', async () => {
+  await page.viewport(1920, 1400)
+  const testDeps = await buildDeps(baseTrack())
+  renderMixer(testDeps)
+  await waitForLoaded(testDeps.audioEngine)
+
+  const mixer = document.querySelector<HTMLElement>('.mixer-page')
+  const firstLane = document.querySelector<HTMLElement>('.mixer-lane-row')
+  if (mixer === null || firstLane === null) throw new Error('mixer layout not found')
+
+  expect(mixer.getBoundingClientRect().width).toBeGreaterThan(1800)
+  expect(firstLane.getBoundingClientRect().height).toBeGreaterThan(140)
+})
+
+test('short mixer viewports keep the minimum lane height and remain scrollable', async () => {
+  await page.viewport(1280, 560)
+  const testDeps = await buildDeps(baseTrack())
+  renderMixer(testDeps)
+  await waitForLoaded(testDeps.audioEngine)
+
+  const firstLane = document.querySelector<HTMLElement>('.mixer-lane-row')
+  if (firstLane === null) throw new Error('mixer lane not found')
+
+  expect(firstLane.getBoundingClientRect().height).toBeGreaterThanOrEqual(80)
+  expect(document.documentElement.scrollHeight).toBeGreaterThan(window.innerHeight)
 })
 
 test('every rendered lane waveform reaches 3:1 contrast against its actual lane surface', async () => {

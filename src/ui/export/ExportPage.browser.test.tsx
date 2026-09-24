@@ -1,6 +1,7 @@
 import { afterEach, expect, test, vi } from 'vitest'
 import { flushSync } from 'react-dom'
 import { createRoot, type Root } from 'react-dom/client'
+import { page } from 'vitest/browser'
 import { InMemoryCatalog } from '../../../tests/fakes/in-memory-catalog'
 import { InMemoryStemStore } from '../../../tests/fakes/in-memory-stem-store'
 import { readZip } from '../../../tests/support/independent-zip-reader'
@@ -148,6 +149,22 @@ test('separates Export title, real track metadata, and browser-storage panel', a
   expect(document.querySelector('.export-download-zip')?.textContent).toBe(
     `Download ZIP · ${formatBytes((await testDeps.stemStore.readLane('stems/track-1', 'vocals')).length * BASIC_PROFILE.lanes.length)}`,
   )
+})
+
+test('Export expands across a maximized workspace and preserves compact stacking', async () => {
+  await page.viewport(1920, 1000)
+  const testDeps = await buildDeps(baseTrack())
+  renderExportPage(testDeps)
+  await waitFor(() => rowsRendered().length === BASIC_PROFILE.lanes.length)
+
+  const exportPage = document.querySelector<HTMLElement>('.export-page')
+  const contentGrid = document.querySelector<HTMLElement>('.export-content-grid')
+  if (exportPage === null || contentGrid === null) throw new Error('export layout not found')
+  expect(exportPage.getBoundingClientRect().width).toBeGreaterThan(1800)
+  expect(getComputedStyle(contentGrid).gridTemplateColumns.split(' ')).toHaveLength(2)
+
+  await page.viewport(700, 900)
+  expect(getComputedStyle(contentGrid).gridTemplateColumns.split(' ')).toHaveLength(1)
 })
 
 test('unchecking a lane excludes it from both "Download selected" and the ZIP', async () => {
