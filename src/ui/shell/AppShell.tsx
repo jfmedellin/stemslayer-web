@@ -1,4 +1,4 @@
-import type { ReactNode } from 'react'
+import { useEffect, useRef, useState, type ReactNode } from 'react'
 import type { OnnxProvider } from '../../infrastructure/onnx-worker/onnx-session-manager'
 import { formatBytes } from '../format/format-bytes'
 
@@ -32,19 +32,81 @@ export interface AppShellProps {
  * so the meter reads "free", not the mockup's literal "X GB / Y GB" split.
  */
 export function AppShell({ activeDestination, onNavigate, engineProvider, availableBytes, children }: AppShellProps) {
+  const narrowScreenQuery = '(max-width: 700px)'
+  const [isNarrowScreen, setIsNarrowScreen] = useState(() => window.matchMedia(narrowScreenQuery).matches)
+  const [navigationOpen, setNavigationOpen] = useState(() => !window.matchMedia(narrowScreenQuery).matches)
+  const navigationToggle = useRef<HTMLButtonElement>(null)
+
+  useEffect(() => {
+    const mediaQuery = window.matchMedia(narrowScreenQuery)
+    const syncNavigationToViewport = () => {
+      setIsNarrowScreen(mediaQuery.matches)
+      setNavigationOpen(!mediaQuery.matches)
+    }
+
+    mediaQuery.addEventListener('change', syncNavigationToViewport)
+    return () => mediaQuery.removeEventListener('change', syncNavigationToViewport)
+  }, [])
+
+  useEffect(() => {
+    if (!isNarrowScreen || !navigationOpen) return
+
+    const closeOnEscape = (event: KeyboardEvent) => {
+      if (event.key !== 'Escape') return
+      navigationToggle.current?.focus()
+      setNavigationOpen(false)
+    }
+
+    window.addEventListener('keydown', closeOnEscape)
+    return () => window.removeEventListener('keydown', closeOnEscape)
+  }, [isNarrowScreen, navigationOpen])
+
+  const handleNavigate = (destination: NavDestination) => {
+    onNavigate(destination)
+    if (isNarrowScreen) {
+      navigationToggle.current?.focus()
+      setNavigationOpen(false)
+    }
+  }
+
   return (
-    <div className="app-shell">
+    <div className="app-shell" data-nav-open={navigationOpen}>
       <header className="app-header">
         <div className="brand-lockup">
           <span className="wordmark">Stemslayer</span>
           <span className="brand-badge">STUDIO</span>
         </div>
+        <button
+          ref={navigationToggle}
+          type="button"
+          className="nav-toggle"
+          data-testid="nav-toggle"
+          aria-label={navigationOpen ? 'Hide navigation' : 'Show navigation'}
+          aria-expanded={navigationOpen}
+          aria-controls="app-nav"
+          onClick={() => setNavigationOpen((open) => !open)}
+        >
+          <span aria-hidden="true">☰</span>
+        </button>
         <span className="engine-pill" data-provider={engineProvider}>
           {engineProvider === 'webgpu' ? 'WebGPU' : 'WASM'}
         </span>
       </header>
 
-      <nav className="app-nav" aria-label="Destinations">
+      {isNarrowScreen && navigationOpen && (
+        <button
+          type="button"
+          className="app-nav-backdrop"
+          data-testid="nav-backdrop"
+          aria-label="Close navigation"
+          onClick={() => {
+            navigationToggle.current?.focus()
+            setNavigationOpen(false)
+          }}
+        />
+      )}
+
+      <nav id="app-nav" className="app-nav" aria-label="Destinations" hidden={!navigationOpen}>
         <div>
           <p className="nav-heading">Workspace</p>
           <ul className="nav-list">
@@ -56,7 +118,7 @@ export function AppShell({ activeDestination, onNavigate, engineProvider, availa
                   data-destination={destination.id}
                   aria-label={destination.label}
                   aria-current={activeDestination === destination.id ? 'page' : undefined}
-                  onClick={() => onNavigate(destination.id)}
+                  onClick={() => handleNavigate(destination.id)}
                 >
                   {destination.label}
                 </button>

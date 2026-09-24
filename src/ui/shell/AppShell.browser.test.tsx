@@ -1,7 +1,7 @@
 import { afterEach, expect, test } from 'vitest'
 import { flushSync } from 'react-dom'
 import { createRoot, type Root } from 'react-dom/client'
-import { userEvent } from 'vitest/browser'
+import { page, userEvent } from 'vitest/browser'
 import '../tokens.css'
 import { AppShell } from './AppShell'
 
@@ -77,6 +77,7 @@ test('renders the page content passed as children', () => {
 })
 
 test('keyboard traversal follows the sidebar order and exposes a visible focus indicator', async () => {
+  await page.viewport(1280, 900)
   render('upload', () => undefined)
   const items = [...document.querySelectorAll<HTMLButtonElement>('.nav-item')]
 
@@ -88,4 +89,59 @@ test('keyboard traversal follows the sidebar order and exposes a visible focus i
     expect(style.outlineStyle).not.toBe('none')
     expect(parseFloat(style.outlineWidth)).toBeGreaterThanOrEqual(2)
   }
+})
+
+test('desktop navigation can be collapsed and restored from the header', async () => {
+  await page.viewport(1280, 900)
+  render('upload', () => undefined)
+
+  const toggle = document.querySelector<HTMLButtonElement>('[data-testid="nav-toggle"]')
+  const navigation = document.querySelector<HTMLElement>('#app-nav')
+  expect(toggle?.getAttribute('aria-expanded')).toBe('true')
+  expect(navigation?.hidden).toBe(false)
+
+  await userEvent.click(toggle!)
+  expect(toggle?.getAttribute('aria-expanded')).toBe('false')
+  expect(navigation?.hidden).toBe(true)
+  expect(document.querySelector('.workspace')?.getBoundingClientRect().left).toBe(0)
+
+  await userEvent.click(toggle!)
+  expect(toggle?.getAttribute('aria-expanded')).toBe('true')
+  expect(navigation?.hidden).toBe(false)
+})
+
+test('narrow screens start with navigation hidden and open it as a dismissible drawer', async () => {
+  await page.viewport(390, 844)
+  render('upload', () => undefined)
+
+  const toggle = document.querySelector<HTMLButtonElement>('[data-testid="nav-toggle"]')
+  const navigation = document.querySelector<HTMLElement>('#app-nav')
+  expect(toggle?.getAttribute('aria-expanded')).toBe('false')
+  expect(navigation?.hidden).toBe(true)
+  expect(document.documentElement.scrollWidth).toBeLessThanOrEqual(window.innerWidth)
+
+  await userEvent.click(toggle!)
+  expect(navigation?.hidden).toBe(false)
+  expect(document.querySelector('[data-testid="nav-backdrop"]')).not.toBeNull()
+
+  await userEvent.click(document.querySelector('[data-testid="nav-backdrop"]')!)
+  expect(navigation?.hidden).toBe(true)
+
+  await userEvent.click(toggle!)
+  await userEvent.keyboard('{Escape}')
+  expect(navigation?.hidden).toBe(true)
+})
+
+test('choosing a destination closes the narrow-screen drawer and keeps navigation accessible', async () => {
+  await page.viewport(390, 844)
+  let navigatedTo: string | undefined
+  render('upload', (destination) => { navigatedTo = destination })
+  const toggle = document.querySelector<HTMLButtonElement>('[data-testid="nav-toggle"]')
+
+  await userEvent.click(toggle!)
+  const mixer = document.querySelector<HTMLButtonElement>('[data-destination="mixer"]')
+  await userEvent.click(mixer!)
+
+  expect(navigatedTo).toBe('mixer')
+  expect(document.querySelector<HTMLElement>('#app-nav')?.hidden).toBe(true)
 })
