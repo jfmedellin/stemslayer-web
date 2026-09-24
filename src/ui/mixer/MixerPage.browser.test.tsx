@@ -194,6 +194,9 @@ test('master gain slider calls setMasterGain with masterGainFromPercent\'s value
 
   const fader = document.querySelector<HTMLInputElement>('.mixer-master-gain-fader')
   if (fader === null) throw new Error('master fader not found')
+  expect(fader.getAttribute('aria-label')).toBe('Master volume')
+  expect(document.querySelector('.mixer-master-gain-label')).toBeNull()
+  expect(document.querySelector('.mixer-master-gain-icon')?.getAttribute('aria-hidden')).toBe('true')
   const nativeValueSetter = Object.getOwnPropertyDescriptor(window.HTMLInputElement.prototype, 'value')?.set
   flushSync(() => {
     nativeValueSetter?.call(fader, '50')

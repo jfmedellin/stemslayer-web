@@ -97,7 +97,10 @@ export function TransportBar({
       </div>
 
       <div className="mixer-master-gain">
-        <label htmlFor="mixer-master-gain-fader" className="mixer-master-gain-label">Master</label>
+        <svg className="mixer-master-gain-icon" width="18" height="18" viewBox="0 0 24 24" aria-hidden="true" focusable="false">
+          <path d="M3 9v6h4l5 4V5L7 9H3Z" fill="currentColor" />
+          <path d="M16 9.5a4 4 0 0 1 0 5" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" />
+        </svg>
         <input
           id="mixer-master-gain-fader"
           type="range"
@@ -106,6 +109,7 @@ export function TransportBar({
           max={100}
           value={masterGainPercent}
           onChange={(event) => onMasterGainChange(Number(event.target.value))}
+          aria-label="Master volume"
         />
         <span className="mixer-master-gain-readout">{formatGainDb(masterGainPercent)}</span>
       </div>
