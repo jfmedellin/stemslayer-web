@@ -76,21 +76,26 @@ export function AppShell({ activeDestination, onNavigate, engineProvider, availa
           <span className="wordmark">Stemslayer</span>
           <span className="brand-badge">STUDIO</span>
         </div>
-        <button
-          ref={navigationToggle}
-          type="button"
-          className="nav-toggle"
-          data-testid="nav-toggle"
-          aria-label={navigationOpen ? 'Hide navigation' : 'Show navigation'}
-          aria-expanded={navigationOpen}
-          aria-controls="app-nav"
-          onClick={() => setNavigationOpen((open) => !open)}
-        >
-          <span aria-hidden="true">☰</span>
-        </button>
-        <span className="engine-pill" data-provider={engineProvider}>
-          {engineProvider === 'webgpu' ? 'WebGPU' : 'WASM'}
-        </span>
+        <div className="header-controls">
+          <span className="engine-pill" data-provider={engineProvider}>
+            {engineProvider === 'webgpu' ? 'WebGPU' : 'WASM'}
+          </span>
+          <button
+            ref={navigationToggle}
+            type="button"
+            className="nav-toggle"
+            data-testid="nav-toggle"
+            aria-label={navigationOpen ? 'Hide navigation' : 'Show navigation'}
+            aria-expanded={navigationOpen}
+            aria-controls="app-nav"
+            onClick={() => setNavigationOpen((open) => !open)}
+          >
+            <svg viewBox="0 0 24 24" aria-hidden="true" focusable="false">
+              <rect x="3.5" y="4.5" width="17" height="15" rx="1.5" fill="none" stroke="currentColor" strokeWidth="1.5" />
+              <path d="M9 5v14" fill="none" stroke="currentColor" strokeWidth="1.5" />
+            </svg>
+          </button>
+        </div>
       </header>
 
       {isNarrowScreen && navigationOpen && (
