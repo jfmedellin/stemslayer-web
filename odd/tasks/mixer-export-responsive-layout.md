@@ -42,7 +42,7 @@ Only the responsive Mixer and Export layout and its regression tests, plus this 
   - Trigger evidence: implementation needs coordinated CSS and browser-test edits; writer trigger applies. Mapping of 4+ layout/test files was delegated before deciding.
   - Forecast: approximately 120–220 authored changed lines; actual implementation diff is 58 authored lines before this document update.
   - Verification evidence: RED observed on the new viewport tests before CSS changes: Mixer width capped at 1280px and Export at 1160px. GREEN: `npm run test:browser -- --run src/ui/mixer/MixerPage.browser.test.tsx src/ui/export/ExportPage.browser.test.tsx` — 2 files / 27 tests passed; `npm run test:browser` — 22 files / 152 tests passed. `npm run typecheck` remains blocked by the documented unrelated `src/infrastructure/cache-api/cache-api-model-store.browser.test.ts(130,43): TS2493`.
-  - Commit: pending.
+  - Commit: `7badd37` (`fix(ui): expand mixer and export layouts`).
   - RDD assessment: disabled/unmanaged (repository review switch was already reported globally off; no review launched or toggled).
 
 ## Progress
@@ -52,4 +52,4 @@ Only the responsive Mixer and Export layout and its regression tests, plus this 
 - Focused and full browser suites pass; typecheck reports only the known TS2493 baseline failure above.
 
 ## Next Step
-Commit the verified work unit and record its identity here and in the Engram mirror.
+No implementation work remains; full suite passed and the work unit is committed as `7badd37`.
