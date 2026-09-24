@@ -400,6 +400,8 @@ test('reset is enabled only while a lane or master mix value differs from its de
 
   const reset = document.querySelector<HTMLButtonElement>('.mixer-reset')
   if (reset === null) throw new Error('reset button not found')
+  expect(reset.textContent?.trim()).toBe('Restablecer')
+  expect(reset.getAttribute('aria-label')).toBeNull()
   expect(reset.disabled).toBe(true)
   const lanes = document.querySelector('.mixer-lanes')
   const transport = document.querySelector('.mixer-transport')

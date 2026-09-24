@@ -11,7 +11,8 @@ The user requested the layout shown in the supplied reference and a Reset button
 
 ## Scope
 - Place each lane's M and S buttons immediately to the left of its name, preserving lane labels and button accessibility state.
-- Add a centered `Reset` button after the lane rows and before the transport controls.
+- Add a centered `Restablecer` button after the lane rows and before the transport controls.
+- Label the action `Restablecer`, matching the supplied Spanish reference.
 - Keep the button disabled while all mix settings equal their initial defaults; enable when any lane gain/M/S or master gain differs.
 - Reset all lane gains to 100%, all mute/solo states to false, and master gain to 100%.
 - Do not change playback, playhead, or A/B loop state.
@@ -32,10 +33,10 @@ The user requested the layout shown in the supplied reference and a Reset button
 ## Acceptance Criteria
 - In every lane row, M and S appear immediately before the lane name on the same heading line; the gain fader/readout remains on its own line beneath.
 - Existing M/S accessible names and `aria-pressed` states, and the gain slider labels remain intact.
-- Reset is centered after all lane rows and before transport controls, and is natively disabled at initial state.
-- Changing any lane fader, M, S, or master fader enables Reset; returning every value manually to the defaults disables it again.
-- Activating Reset restores every lane fader to 100%, clears M/S across all lanes, restores master gain to 100%, and disables Reset.
-- Reset does not change playhead position, playback state, or A/B loop state.
+- `Restablecer` is centered after all lane rows and before transport controls, and is natively disabled at initial state.
+- Changing any lane fader, M, S, or master fader enables `Restablecer`; returning every value manually to the defaults disables it again.
+- Activating `Restablecer` restores every lane fader to 100%, clears M/S across all lanes, restores master gain to 100%, and disables the button.
+- `Restablecer` does not change playhead position, playback state, or A/B loop state.
 - Focused and full browser suites pass; no unrelated app behavior changes.
 
 ## Applicable Checks
@@ -49,8 +50,10 @@ The user requested the layout shown in the supplied reference and a Reset button
   - Route: delegated direct.
   - Trigger evidence: state behavior, lane markup, shared CSS, and browser regressions span 4 non-trivial files; mapping and writer triggers apply.
   - Forecast: approximately 160–280 authored changed lines; one coherent mixer-controls work unit.
-  - Verification evidence: RED observed with 3 new regression tests failing before source edits; focused browser suite passed (17/17); full browser suite passed (22 files, 159 tests); `git diff --check` passed. `npm run typecheck` remains blocked by the known unrelated TS2493 at `src/infrastructure/cache-api/cache-api-model-store.browser.test.ts:130`.
-  - Commit: pending.
+  - Verification evidence: Initial RED observed with 3 new regression tests failing before source edits; initial implementation focused browser suite passed (17/17), full suite passed (22 files, 159 tests), independent parent spot-check passed (17/17), and `git diff --check` passed. Reopened for the screenshot-alignment correction: new exact-copy assertion observed RED (`Reset` vs `Restablecer`), then focused browser suite passed (17/17), full suite passed (22 files, 159 tests), and `git diff --check` passed. `npm run typecheck` remains blocked by the known unrelated TS2493 at `src/infrastructure/cache-api/cache-api-model-store.browser.test.ts:130`.
+  - Runtime: N/A — the change is a local browser UI interaction exercised by the browser test runner; no external runtime boundary is part of this task.
+  - Initial commit: `97ec855abf72860d471e74c3614ad8c86d22e606` — `feat(mixer): add track reset controls`.
+  - Final commit: pending localized label and regression.
   - RDD assessment: disabled/unmanaged; no review.
 
 ## Progress
@@ -60,4 +63,4 @@ The user requested the layout shown in the supplied reference and a Reset button
 - `MixerPage` audio effects already propagate lane/master values to the audio engine, so resetting React state reuses the established gain path.
 
 ## Next Step
-Record the implementation commit identity, then save and read back the final tracker mirror.
+Record the final follow-up commit SHA and read back the updated local and Engram tracker copies.

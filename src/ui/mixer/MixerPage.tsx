@@ -312,7 +312,7 @@ export function MixerPage({ deps, trackId, onBackToLibrary, onExport }: MixerPag
             onClick={handleResetMix}
             disabled={!hasMixChanges}
           >
-            Reset
+            Restablecer
           </button>
 
           <TransportBar
