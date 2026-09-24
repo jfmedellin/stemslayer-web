@@ -29,7 +29,7 @@ The ONNX Worker cannot safely execute either model until input windows, overlap 
 
 ## Constraints and decisions
 
-- Base branch `feat/p7-integration` at merge commit `9198af8` contains P5 and P6 without rewriting reviewed commits.
+- Developed locally on `feat/p7-integration` (merge commit `9198af8` of P5 and P6), matching P7b's future dependency on both. Published for review as `feat/p7a-onnx-dsp`, rebased directly onto `feat/p4-browser-adapters`: P7a's code (`windowing.ts`, `fft.ts`, `stft.ts`) has no import from P5 or P6, so the PR chain does not wait on either. `feat/p7-integration` remains the local integration point once all three land on `main`.
 - Both models use segment length 343980, stride 257985, symmetric context, center trim, triangular weighting, and normalization.
 - Basic requires external JS FFT/STFT and CAC construction; Rock consumes and produces waveform tensors directly.
 - STFT parameters are FFT 4096, hop 1024, periodic Hann, reflect padding, and normalized transform.
