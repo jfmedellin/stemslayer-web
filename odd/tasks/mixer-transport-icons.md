@@ -45,10 +45,10 @@ The user explicitly requested that the base Play, forward, back, and loop contro
 - Typecheck: `npm run typecheck` failed only at unchanged `src/infrastructure/cache-api/cache-api-model-store.browser.test.ts:130` with TS2493 (`[]` tuple has no index `0`). No Mixer-related type errors were reported.
 - Runtime harness: browser Vitest/Chromium; icon-button semantics and loop keyboard/button synchronization exercised by the Mixer browser tests.
 - Rollback boundary: revert the MTR-01 commit, which removes the compact controls and their focused browser coverage without affecting other Mixer behavior.
-- Commit: pending.
+- Behavior work-unit commit: `f905423c7d1771beba7de61b8ef8f425453d44e5` (`feat(mixer): add compact icon transport controls`). This task-document evidence update is in a follow-up commit to record the behavior commit identity without a self-referential hash.
 
 ## Next step
-After final command checks, create the MTR-01 work-unit commit; parent will read back this document and synchronize its Engram mirror.
+Parent to read back this document and synchronize its Engram mirror.
 
 ## Relevant files
 - `src/ui/mixer/TransportBar.tsx` — transport controls and A/B loop controls.
