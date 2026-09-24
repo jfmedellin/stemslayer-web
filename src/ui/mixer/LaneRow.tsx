@@ -37,8 +37,7 @@ export function LaneRow({ lane, state, peaks, onMuteToggle, onSoloToggle, onGain
       <div className="mixer-lane-ribbon" style={{ background: `var(${laneColorVar(lane.laneId)})` }} />
 
       <div className="mixer-lane-info">
-        <p className="mixer-lane-name">{label}</p>
-        <div className="mixer-lane-pills">
+        <div className="mixer-lane-heading">
           <button
             type="button"
             className="mixer-lane-pill mixer-lane-mute"
@@ -57,6 +56,7 @@ export function LaneRow({ lane, state, peaks, onMuteToggle, onSoloToggle, onGain
           >
             S
           </button>
+          <p className="mixer-lane-name">{label}</p>
         </div>
         <div className="mixer-lane-gain">
           <input

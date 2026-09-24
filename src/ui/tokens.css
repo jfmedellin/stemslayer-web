@@ -210,17 +210,19 @@ h1 { margin: 0 0 var(--space-4); font: var(--text-headline-xl); }
 .mixer-lane-row:last-child { border-bottom: none; }
 .mixer-lane-row[data-absent="true"] .mixer-lane-ribbon { opacity: .65; }
 .mixer-lane-ribbon { align-self: stretch; border-radius: var(--radius-state); }
-.mixer-lane-info { display: grid; grid-template-columns: 1fr auto; align-content: center; gap: var(--space-2); padding: var(--space-2) var(--space-1); }
+.mixer-lane-info { display: grid; grid-template-columns: 1fr; align-content: center; gap: var(--space-2); padding: var(--space-2) var(--space-1); }
+.mixer-lane-heading { display: flex; align-items: center; gap: var(--space-2); min-width: 0; }
 .mixer-lane-name { margin: 0; font: var(--text-body-md); color: var(--color-text-primary); }
-.mixer-lane-pills { display: flex; gap: var(--space-2); }
 .mixer-lane-pill { width: 22px; height: 22px; border: 1px solid var(--color-border-module); border-radius: var(--radius-state); background: var(--color-control); color: var(--color-text-secondary); font: var(--text-label-caps); cursor: pointer; }
 .mixer-lane-mute[aria-pressed="true"] { background: var(--color-rust); border-color: var(--color-rust); color: var(--color-void); }
 .mixer-lane-solo[aria-pressed="true"] { background: var(--color-gold); border-color: var(--color-gold); color: var(--color-void); }
 .mixer-lane-waveform { width: 100%; height: 100%; min-height: 68px; fill: var(--lane-accent); background: var(--color-control); }
 .mixer-lane-waveform path { opacity: .75; }
-.mixer-lane-gain { grid-column: 1 / -1; display: flex; align-items: center; gap: var(--space-2); }
+.mixer-lane-gain { display: flex; align-items: center; gap: var(--space-2); }
 .mixer-lane-gain-fader { flex: 1; min-width: 0; accent-color: var(--lane-accent); }
 .mixer-lane-gain-readout { min-width: 48px; color: var(--color-text-secondary); font: var(--text-telemetry-sm); text-align: right; }
+.mixer-reset { display: block; margin: var(--space-3) auto; padding: var(--space-2) var(--space-4); border: 1px solid var(--color-border-module); border-radius: var(--radius-control); background: var(--color-control); color: var(--color-text-primary); font: var(--text-body-sm); cursor: pointer; }
+.mixer-reset:disabled { opacity: 1; background: var(--color-active); color: var(--color-text-secondary); cursor: not-allowed; }
 
 .mixer-transport { display: flex; align-items: center; gap: var(--space-5); padding: var(--space-4); border: 1px solid var(--color-border); border-radius: var(--radius-control); background: var(--color-panel); flex-wrap: wrap; }
 .mixer-transport-buttons { display: flex; align-items: center; gap: var(--space-2); }

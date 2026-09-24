@@ -253,6 +253,19 @@ export function MixerPage({ deps, trackId, onBackToLibrary, onExport }: MixerPag
   }, [canPlay, handleTogglePlayback, handleSkip, handleToggleLoopKey])
 
   const profileDisplayName = track === undefined ? '' : resolveStemProfile(track.profileId).displayName
+  const hasMixChanges = masterGainPercent !== DEFAULT_MASTER_GAIN_PERCENT
+    || (session?.lanes.some((lane) => {
+      const state = laneStates[lane.laneId] ?? DEFAULT_LANE_STATE
+      return state.gainPercent !== DEFAULT_LANE_STATE.gainPercent
+        || state.muted !== DEFAULT_LANE_STATE.muted
+        || state.solo !== DEFAULT_LANE_STATE.solo
+    }) ?? false)
+
+  const handleResetMix = useCallback(() => {
+    if (session === null) return
+    setLaneStates(initialLaneStates(session))
+    setMasterGainPercent(DEFAULT_MASTER_GAIN_PERCENT)
+  }, [session])
 
   return (
     <section className="mixer-page" aria-labelledby="mixer-page-title">
@@ -292,6 +305,15 @@ export function MixerPage({ deps, trackId, onBackToLibrary, onExport }: MixerPag
             onSoloToggle={handleSoloToggle}
             onGainChange={handleGainChange}
           />
+
+          <button
+            type="button"
+            className="mixer-reset"
+            onClick={handleResetMix}
+            disabled={!hasMixChanges}
+          >
+            Reset
+          </button>
 
           <TransportBar
             isPlaying={progress.isPlaying}

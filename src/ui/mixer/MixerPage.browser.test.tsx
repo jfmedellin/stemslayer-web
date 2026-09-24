@@ -378,6 +378,109 @@ test('Back to library and Export stems only navigate; they never dispose the sha
   expect(testDeps.audioEngine.disposed).toBe(false)
 })
 
+test('lane mute and solo controls share the heading line immediately before the lane name', async () => {
+  const testDeps = await buildDeps(baseTrack())
+  renderMixer(testDeps)
+  await waitForLoaded(testDeps.audioEngine)
+
+  for (const row of lanesRendered()) {
+    const heading = row.querySelector('.mixer-lane-heading')
+    expect(heading).not.toBeNull()
+    expect(heading?.children[0]?.classList.contains('mixer-lane-mute')).toBe(true)
+    expect(heading?.children[1]?.classList.contains('mixer-lane-solo')).toBe(true)
+    expect(heading?.children[2]?.classList.contains('mixer-lane-name')).toBe(true)
+    expect(row.querySelector('.mixer-lane-gain')).not.toBeNull()
+  }
+})
+
+test('reset is enabled only while a lane or master mix value differs from its default', async () => {
+  const testDeps = await buildDeps(baseTrack())
+  renderMixer(testDeps)
+  await waitForLoaded(testDeps.audioEngine)
+
+  const reset = document.querySelector<HTMLButtonElement>('.mixer-reset')
+  if (reset === null) throw new Error('reset button not found')
+  expect(reset.disabled).toBe(true)
+  const lanes = document.querySelector('.mixer-lanes')
+  const transport = document.querySelector('.mixer-transport')
+  if (lanes === null || transport === null) throw new Error('mixer controls not found')
+  expect(lanes.compareDocumentPosition(reset) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy()
+  expect(reset.compareDocumentPosition(transport) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy()
+
+  clickButton('.mixer-lane-row[data-lane-id="vocals"] .mixer-lane-mute')
+  expect(reset.disabled).toBe(false)
+  clickButton('.mixer-lane-row[data-lane-id="vocals"] .mixer-lane-mute')
+  expect(reset.disabled).toBe(true)
+
+  const laneFader = document.querySelector<HTMLInputElement>('.mixer-lane-row[data-lane-id="vocals"] .mixer-lane-gain-fader')!
+  const masterFader = document.querySelector<HTMLInputElement>('.mixer-master-gain-fader')!
+  const setRange = (fader: HTMLInputElement, value: number) => {
+    const nativeValueSetter = Object.getOwnPropertyDescriptor(window.HTMLInputElement.prototype, 'value')?.set
+    flushSync(() => {
+      nativeValueSetter?.call(fader, String(value))
+      fader.dispatchEvent(new Event('input', { bubbles: true }))
+    })
+  }
+
+  setRange(laneFader, 40)
+  expect(reset.disabled).toBe(false)
+  setRange(laneFader, 100)
+  expect(reset.disabled).toBe(true)
+
+  setRange(masterFader, 50)
+  expect(reset.disabled).toBe(false)
+  setRange(masterFader, 100)
+  expect(reset.disabled).toBe(true)
+})
+
+test('reset restores lane and master gains and M/S states without changing transport state', async () => {
+  const testDeps = await buildDeps(baseTrack())
+  renderMixer(testDeps)
+  await waitForLoaded(testDeps.audioEngine)
+
+  clickButton('.mixer-set-loop-a')
+  clickButton('.mixer-skip-forward')
+  clickButton('.mixer-set-loop-b')
+  clickButton('.mixer-play-pause')
+
+  const seekCount = testDeps.audioEngine.seekCalls.length
+  const loopCount = testDeps.audioEngine.loopRangeCalls.length
+  const playCount = testDeps.audioEngine.playCalls
+  const pauseCount = testDeps.audioEngine.pauseCalls
+  const laneFader = document.querySelector<HTMLInputElement>('.mixer-lane-row[data-lane-id="vocals"] .mixer-lane-gain-fader')!
+  const masterFader = document.querySelector<HTMLInputElement>('.mixer-master-gain-fader')!
+  const setRange = (fader: HTMLInputElement, value: number) => {
+    const nativeValueSetter = Object.getOwnPropertyDescriptor(window.HTMLInputElement.prototype, 'value')?.set
+    flushSync(() => {
+      nativeValueSetter?.call(fader, String(value))
+      fader.dispatchEvent(new Event('input', { bubbles: true }))
+    })
+  }
+  setRange(laneFader, 40)
+  setRange(masterFader, 50)
+  clickButton('.mixer-lane-row[data-lane-id="vocals"] .mixer-lane-mute')
+  clickButton('.mixer-lane-row[data-lane-id="drums"] .mixer-lane-solo')
+
+  const reset = document.querySelector<HTMLButtonElement>('.mixer-reset')
+  if (reset === null) throw new Error('reset button not found')
+  expect(reset.disabled).toBe(false)
+  clickButton('.mixer-reset')
+
+  expect(reset.disabled).toBe(true)
+  expect([...document.querySelectorAll<HTMLInputElement>('.mixer-lane-gain-fader')].map((fader) => fader.value))
+    .toEqual(['100', '100', '100', '100', '100', '100'])
+  expect(document.querySelector<HTMLInputElement>('.mixer-master-gain-fader')?.value).toBe('100')
+  expect([...document.querySelectorAll<HTMLButtonElement>('.mixer-lane-mute, .mixer-lane-solo')]
+    .every((button) => button.getAttribute('aria-pressed') === 'false')).toBe(true)
+  expect(lastGainFor(testDeps.audioEngine, 'vocals')).toBe(1)
+  expect(lastGainFor(testDeps.audioEngine, 'drums')).toBe(1)
+  expect(testDeps.audioEngine.masterGainCalls.at(-1)).toBe(1)
+  expect(testDeps.audioEngine.seekCalls).toHaveLength(seekCount)
+  expect(testDeps.audioEngine.loopRangeCalls).toHaveLength(loopCount)
+  expect(testDeps.audioEngine.playCalls).toBe(playCount)
+  expect(testDeps.audioEngine.pauseCalls).toBe(pauseCount)
+})
+
 test('the desktop mixer keeps timeline labels and each lane gain beside its controls', async () => {
   const testDeps = await buildDeps(baseTrack())
   renderMixer(testDeps)
