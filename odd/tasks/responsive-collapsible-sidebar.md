@@ -31,6 +31,7 @@ The user wants more usable screen space and a layout that remains functional on 
 
 ## Acceptance Criteria
 - Desktop starts with navigation visible; the header toggle hides it and the workspace expands, and a second activation restores it.
+- The sidebar toggle sits at the far right of the header beside the engine badge, not between the brand and right-side controls, and uses a compact outlined sidebar/panel icon matching the supplied reference.
 - At narrow widths (existing 700px breakpoint), navigation is hidden by default and can be opened as an overlay without forcing horizontal page overflow.
 - On narrow screens the drawer closes after choosing a destination, activating the backdrop, or pressing Escape.
 - The toggle exposes correct accessible name/state/control relationship; hidden destinations are absent from keyboard tab order/accessibility tree.
@@ -51,6 +52,13 @@ The user wants more usable screen space and a layout that remains functional on 
   - Verification evidence: RED observed (3 new browser regressions failed before implementation); focused suite 11/11 passed; full browser suite 22 files / 155 tests passed; `git diff --check` passed. `npm run typecheck` still fails only with the known unrelated TS2493 at `src/infrastructure/cache-api/cache-api-model-store.browser.test.ts:130`.
   - Commit: `171cb17d3851e09961c8f82de4c5e0c75ddd4e04` — `feat(shell): add collapsible responsive navigation`.
   - RDD assessment: disabled/unmanaged; no review.
+- [x] RSB-02 — Align the navigation toggle with the right-side header controls and replace the hamburger glyph with an outlined sidebar icon.
+  - Route: delegated direct.
+  - Trigger evidence: test-first presentation correction touches shell markup, shared CSS, and browser regressions (3 non-trivial files); writer trigger applies.
+  - Forecast: approximately 40–100 authored changed lines; delivery strategy remains `ask-on-risk`.
+  - Verification evidence: RED observed: focused test failed because `.header-controls` did not exist (11 passed, 1 failed); focused GREEN: 12/12 passed. Full browser suite: 22 files / 156 tests passed. `git diff --check` passed. `npm run typecheck` remains blocked only by the known unrelated TS2493 at `src/infrastructure/cache-api/cache-api-model-store.browser.test.ts:130`.
+  - Commit: `f3fd1abb43ffbd780da8d7c5fbe9d35d6ea8f044` — `feat(shell): align navigation toggle with header controls`.
+  - RDD assessment: disabled/unmanaged; no review.
 
 ## Progress
 - Read-only mapping confirmed the app shell always reserves 192px, with no collapse state or shell-level mobile navigation treatment.
@@ -61,6 +69,12 @@ The user wants more usable screen space and a layout that remains functional on 
 - Focused browser suite: `npm run test:browser -- --run src/ui/shell/AppShell.browser.test.tsx` — 11/11 passed.
 - Full browser suite: `npm run test:browser` — 22 files / 155 tests passed.
 - Typecheck: `npm run typecheck` — known unrelated TS2493 failure at `src/infrastructure/cache-api/cache-api-model-store.browser.test.ts:130`.
+- User feedback: first iteration placed the navigation toggle in the middle of the header. The supplied reference places the sidebar control at the far right; RSB-02 corrects alignment and icon without changing navigation behavior.
+- RSB-02 uses a right-aligned header-controls group containing the engine badge and toggle; the toggle now renders a compact decorative SVG panel outline while preserving its accessible name, expanded state, and controls relationship.
+- RSB-02 regression: `npm run test:browser -- --run src/ui/shell/AppShell.browser.test.tsx` — 12/12 passed after observing RED (11 passed, 1 failed before implementation).
+- RSB-02 full browser suite: `npm run test:browser` — 22 files / 156 tests passed.
+- RSB-02 typecheck: `npm run typecheck` — failed with only the known unrelated TS2493 at `src/infrastructure/cache-api/cache-api-model-store.browser.test.ts:130`.
+- RSB-02 whitespace validation: `git diff --check` — passed.
 
 ## Next Step
-RSB-01 is complete; no additional work is pending for this feature.
+RSB-01 and RSB-02 are complete; no additional work is pending for this feature.
