@@ -53,7 +53,7 @@ The user requested the layout shown in the supplied reference and a Reset button
   - Verification evidence: Initial RED observed with 3 new regression tests failing before source edits; initial implementation focused browser suite passed (17/17), full suite passed (22 files, 159 tests), independent parent spot-check passed (17/17), and `git diff --check` passed. Reopened for the screenshot-alignment correction: new exact-copy assertion observed RED (`Reset` vs `Restablecer`), then focused browser suite passed (17/17), full suite passed (22 files, 159 tests), and `git diff --check` passed. `npm run typecheck` remains blocked by the known unrelated TS2493 at `src/infrastructure/cache-api/cache-api-model-store.browser.test.ts:130`.
   - Runtime: N/A — the change is a local browser UI interaction exercised by the browser test runner; no external runtime boundary is part of this task.
   - Initial commit: `97ec855abf72860d471e74c3614ad8c86d22e606` — `feat(mixer): add track reset controls`.
-  - Final commit: pending localized label and regression.
+  - Final commit: `cddacb86602703a50cc927e9107f9628a8f59894` — `fix(mixer): match reset label to reference`.
   - RDD assessment: disabled/unmanaged; no review.
 
 ## Progress
@@ -63,4 +63,4 @@ The user requested the layout shown in the supplied reference and a Reset button
 - `MixerPage` audio effects already propagate lane/master values to the audio engine, so resetting React state reuses the established gain path.
 
 ## Next Step
-Record the final follow-up commit SHA and read back the updated local and Engram tracker copies.
+Implementation and verification complete; both commit identities are recorded and the tracker mirror has been saved and read back.
