@@ -88,6 +88,24 @@ describe('WebAudioEngine against a real AudioWorkletProcessor (OfflineAudioConte
     expect(left[50]).toBe(0)
   })
 
+  test('pause reports its state and cursor so playback can resume from that position', async () => {
+    const progress: Array<{ currentSample: number; isPlaying: boolean }> = []
+    engine.onProgress((update) => progress.push(update))
+    await engine.load(makeSession([lane('vocals', 0.3)]))
+    engine.seek(80)
+    engine.play()
+    engine.pause()
+    engine.play()
+
+    await render(context)
+
+    expect(progress).toEqual([
+      { currentSample: 80, isPlaying: true },
+      { currentSample: 80, isPlaying: false },
+      { currentSample: 80, isPlaying: true },
+    ])
+  })
+
   test('multi-solo: a soloed lane keeps its gain, a non-soloed lane is silenced, wired through the real domain formula', async () => {
     const vocals = lane('vocals', 0.1)
     const drums = lane('drums', 0.2)

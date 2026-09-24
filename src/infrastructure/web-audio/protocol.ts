@@ -80,9 +80,9 @@ export type MixerWorkletInboundMessage =
   | MixerWorkletLoopRangeMessage
 
 /**
- * Batched playhead/time-readout update, posted roughly every
- * `PROGRESS_INTERVAL_SECONDS` of rendered audio rather than every ~2.9 ms
- * render quantum (128 samples @ 44.1kHz) — posting every quantum would
+ * Playhead/time-readout update, posted on transport state changes and roughly
+ * every `PROGRESS_INTERVAL_SECONDS` of rendered audio rather than every ~2.9
+ * ms render quantum (128 samples @ 44.1kHz) — posting every quantum would
  * flood the main thread with ~344 messages/second for no consumer benefit
  * and cost audio-thread cycles better spent mixing.
  */

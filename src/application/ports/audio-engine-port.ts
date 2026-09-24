@@ -32,7 +32,7 @@ export interface MixerSession {
   readonly fallback: boolean
 }
 
-/** Playback position/state pushed back from the engine on a batched interval, not per render quantum. */
+/** Playback position/state pushed back on transport changes and a batched interval, not per render quantum. */
 export interface MixerPlaybackProgress {
   readonly currentSample: number
   readonly isPlaying: boolean
@@ -60,7 +60,7 @@ export interface AudioEnginePort {
   play(): void
   pause(): void
   seek(sample: number): void
-  /** Subscribes to batched progress updates; returns an unsubscribe function. */
+  /** Subscribes to transport-change and batched progress updates; returns an unsubscribe function. */
   onProgress(listener: (progress: MixerPlaybackProgress) => void): () => void
   /** Releases the `AudioContext`/worklet node; the port instance is unusable afterward. */
   dispose(): void

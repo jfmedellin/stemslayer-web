@@ -93,10 +93,12 @@ class MixerProcessor extends AudioWorkletProcessor {
     }
     if (data.kind === 'play') {
       this.playing = this.frameCount > 0
+      this.postProgress()
       return
     }
     if (data.kind === 'pause') {
       this.playing = false
+      this.postProgress()
       return
     }
     if (data.kind === 'seek') {
