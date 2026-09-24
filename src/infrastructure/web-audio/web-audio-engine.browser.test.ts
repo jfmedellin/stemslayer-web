@@ -1,4 +1,4 @@
-import { beforeEach, describe, expect, test } from 'vitest'
+import { beforeEach, describe, expect, test, vi } from 'vitest'
 
 import { createLoopRange, resolveEffectiveGains, type MixerLaneState } from '../../domain/mixer/mixer'
 import type { MixerSession, MixerSessionLane } from '../../application/ports/audio-engine-port'
@@ -195,5 +195,94 @@ describe('WebAudioEngine against a real AudioWorkletProcessor (OfflineAudioConte
 
     expect(left[0]).toBeCloseTo(solo.channels[0][80], 6)
     expect(left[19]).toBeCloseTo(solo.channels[0][99], 6)
+  })
+})
+
+describe('WebAudioEngine real-time context activation (Chromium)', () => {
+  test('resumes a suspended real-time context from Play before reporting playback', async () => {
+    const context = new AudioContext({ sampleRate: SAMPLE_RATE })
+    const engine = new WebAudioEngine({ context })
+
+    try {
+      await engine.load(makeSession([lane('vocals', 0.3)]))
+      await context.suspend()
+      const resume = vi.spyOn(context, 'resume').mockResolvedValue()
+      const node = (engine as unknown as { node: AudioWorkletNode }).node
+      const postMessage = vi.spyOn(node.port, 'postMessage')
+
+      engine.play()
+
+      expect(resume).toHaveBeenCalledOnce()
+      expect(postMessage.mock.calls.map(([message]) => (message as { kind: string }).kind)).not.toContain('play')
+      await Promise.resolve()
+      expect(postMessage.mock.calls.map(([message]) => (message as { kind: string }).kind)).toContain('play')
+    } finally {
+      engine.dispose()
+    }
+  })
+
+  test('does not report playback when resuming the real-time context fails', async () => {
+    const context = new AudioContext({ sampleRate: SAMPLE_RATE })
+    const engine = new WebAudioEngine({ context })
+
+    try {
+      await engine.load(makeSession([lane('vocals', 0.3)]))
+      await context.suspend()
+      vi.spyOn(context, 'resume').mockRejectedValue(new Error('resume blocked'))
+      const node = (engine as unknown as { node: AudioWorkletNode }).node
+      const postMessage = vi.spyOn(node.port, 'postMessage')
+
+      engine.play()
+      await Promise.resolve()
+
+      expect(postMessage.mock.calls.map(([message]) => (message as { kind: string }).kind)).not.toContain('play')
+    } finally {
+      engine.dispose()
+    }
+  })
+
+  test('keeps the latest pause intent when Play is waiting for context resume', async () => {
+    const context = new AudioContext({ sampleRate: SAMPLE_RATE })
+    const engine = new WebAudioEngine({ context })
+
+    try {
+      await engine.load(makeSession([lane('vocals', 0.3)]))
+      await context.suspend()
+      let resolveResume!: () => void
+      vi.spyOn(context, 'resume').mockImplementation(() => new Promise<void>((resolve) => {
+        resolveResume = resolve
+      }))
+      const node = (engine as unknown as { node: AudioWorkletNode }).node
+      const postMessage = vi.spyOn(node.port, 'postMessage')
+
+      engine.play()
+      engine.pause()
+      resolveResume()
+      await Promise.resolve()
+
+      expect(postMessage.mock.calls.map(([message]) => (message as { kind: string }).kind)).toEqual(['pause'])
+    } finally {
+      engine.dispose()
+    }
+  })
+
+  test('does not call resume when the real-time context is already running', async () => {
+    const context = new AudioContext({ sampleRate: SAMPLE_RATE })
+    const engine = new WebAudioEngine({ context })
+
+    try {
+      await engine.load(makeSession([lane('vocals', 0.3)]))
+      Object.defineProperty(context, 'state', { configurable: true, value: 'running' })
+      const resume = vi.spyOn(context, 'resume')
+      const node = (engine as unknown as { node: AudioWorkletNode }).node
+      const postMessage = vi.spyOn(node.port, 'postMessage')
+
+      engine.play()
+
+      expect(resume).not.toHaveBeenCalled()
+      expect(postMessage.mock.calls.map(([message]) => (message as { kind: string }).kind)).toContain('play')
+    } finally {
+      engine.dispose()
+    }
   })
 })

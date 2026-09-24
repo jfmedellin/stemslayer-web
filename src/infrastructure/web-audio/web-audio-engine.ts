@@ -42,6 +42,7 @@ export class WebAudioEngine implements AudioEnginePort {
   private masterGain: GainNode | undefined
   private laneIndexById = new Map<string, number>()
   private readonly progressListeners = new Set<(progress: MixerPlaybackProgress) => void>()
+  private playbackRequest = 0
 
   constructor(options: WebAudioEngineOptions = {}) {
     this.context = options.context ?? new AudioContext()
@@ -49,6 +50,7 @@ export class WebAudioEngine implements AudioEnginePort {
   }
 
   async load(session: MixerSession): Promise<void> {
+    this.playbackRequest += 1
     if (session.lanes.length === 0 || session.lanes.length > MAX_MIXER_LANES) {
       throw workletFailure(`unsupported_lane_count:${session.lanes.length}`)
     }
@@ -136,11 +138,20 @@ export class WebAudioEngine implements AudioEnginePort {
   play(): void {
     const node = this.requireNode()
     const message: MixerWorkletInboundMessage = { kind: 'play' }
+    const request = ++this.playbackRequest
+    if (this.context instanceof AudioContext && this.context.state !== 'running') {
+      if (this.context.state === 'closed') return
+      void this.context.resume().then(() => {
+        if (request === this.playbackRequest && this.node === node) node.port.postMessage(message)
+      }).catch(() => undefined)
+      return
+    }
     node.port.postMessage(message)
   }
 
   pause(): void {
     const node = this.requireNode()
+    this.playbackRequest += 1
     const message: MixerWorkletInboundMessage = { kind: 'pause' }
     node.port.postMessage(message)
   }
