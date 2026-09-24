@@ -110,25 +110,32 @@ test('desktop navigation can be collapsed and restored from the header', async (
   expect(navigation?.hidden).toBe(false)
 })
 
-test('sidebar toggle sits at the far right beside the engine badge and uses an outlined panel icon', async () => {
+test('sidebar toggle sits beside the brand on the left and uses an outlined panel icon', async () => {
   await page.viewport(1280, 900)
   render('upload', () => undefined)
 
   const header = document.querySelector<HTMLElement>('.app-header')!
-  const controls = document.querySelector<HTMLElement>('.header-controls')
+  const controls = document.querySelector<HTMLElement>('.brand-controls')
+  const brand = document.querySelector<HTMLElement>('.brand-lockup')!
   const engine = document.querySelector<HTMLElement>('.engine-pill')!
   const toggle = document.querySelector<HTMLButtonElement>('[data-testid="nav-toggle"]')!
   const icon = toggle.querySelector('svg')
 
   expect(controls).not.toBeNull()
-  expect(controls?.contains(engine)).toBe(true)
-  expect(controls?.lastElementChild).toBe(toggle)
-  expect(toggle.getBoundingClientRect().right).toBeCloseTo(
+  expect(controls?.contains(brand)).toBe(true)
+  expect(controls?.firstElementChild).toBe(toggle)
+  expect(controls?.lastElementChild).toBe(brand)
+  expect(controls?.getBoundingClientRect().left).toBeCloseTo(
+    header.getBoundingClientRect().left + parseFloat(getComputedStyle(header).paddingLeft),
+    0,
+  )
+  expect(toggle.getBoundingClientRect().right).toBeLessThan(brand.getBoundingClientRect().left)
+  expect(brand.getBoundingClientRect().left - toggle.getBoundingClientRect().right).toBeLessThanOrEqual(12)
+  expect(engine.getBoundingClientRect().left).toBeGreaterThan(toggle.getBoundingClientRect().right)
+  expect(engine.getBoundingClientRect().right).toBeCloseTo(
     header.getBoundingClientRect().right - parseFloat(getComputedStyle(header).paddingRight),
     0,
   )
-  expect(engine.getBoundingClientRect().right).toBeLessThan(toggle.getBoundingClientRect().left)
-  expect(toggle.getBoundingClientRect().left - engine.getBoundingClientRect().right).toBeLessThanOrEqual(12)
   expect(icon).not.toBeNull()
   expect(icon?.getAttribute('viewBox')).toBe('0 0 24 24')
   expect(icon?.getAttribute('aria-hidden')).toBe('true')

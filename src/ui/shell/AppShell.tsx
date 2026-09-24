@@ -72,14 +72,7 @@ export function AppShell({ activeDestination, onNavigate, engineProvider, availa
   return (
     <div className="app-shell" data-nav-open={navigationOpen}>
       <header className="app-header">
-        <div className="brand-lockup">
-          <span className="wordmark">Stemslayer</span>
-          <span className="brand-badge">STUDIO</span>
-        </div>
-        <div className="header-controls">
-          <span className="engine-pill" data-provider={engineProvider}>
-            {engineProvider === 'webgpu' ? 'WebGPU' : 'WASM'}
-          </span>
+        <div className="brand-controls">
           <button
             ref={navigationToggle}
             type="button"
@@ -95,7 +88,14 @@ export function AppShell({ activeDestination, onNavigate, engineProvider, availa
               <path d="M9 5v14" fill="none" stroke="currentColor" strokeWidth="1.5" />
             </svg>
           </button>
+          <div className="brand-lockup">
+            <span className="wordmark">Stemslayer</span>
+            <span className="brand-badge">STUDIO</span>
+          </div>
         </div>
+        <span className="engine-pill" data-provider={engineProvider}>
+          {engineProvider === 'webgpu' ? 'WebGPU' : 'WASM'}
+        </span>
       </header>
 
       {isNarrowScreen && navigationOpen && (
