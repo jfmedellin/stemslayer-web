@@ -19,11 +19,11 @@ The worklet flips its private `playing` state on pause but posts progress only w
 - RDD: disabled by the user; ordinary checks only, no review invocation.
 
 ## Tasks
-- [ ] MPR-01 — Add a regression test proving the real playback state reports paused and then playing after pause/replay; correct the worklet's progress acknowledgement (or smallest evidence-backed equivalent) and ensure the Mixer UI toggle resumes. Preserve progress cursor. Run focused and full checks, then create one Conventional Commit on the feature branch.
+- [x] MPR-01 — Add a regression test proving the real playback state reports paused and then playing after pause/replay; correct the worklet's progress acknowledgement (or smallest evidence-backed equivalent) and ensure the Mixer UI toggle resumes. Preserve progress cursor. Run focused and full checks, then create one Conventional Commit on the feature branch.
   - Acceptance: after Pause, UI state is false and the next Play reaches the worklet and resumes from the same cursor; test coverage no longer depends on the fake prematurely emitting real-engine acknowledgements.
-  - Verification: strict TDD RED/GREEN exact commands/results; focused browser/runtime path and all applicable full checks; record existing environment failures honestly.
+  - Verification: RED `npm run test:browser -- src/infrastructure/web-audio/web-audio-engine.browser.test.ts` reproduced missing progress events. GREEN: focused browser 7/7 (parent spot-check 7/7), full `npm test` 367/367, full browser 144/144, `git diff --check` passed. `npm run lint` fails on the existing `src/infrastructure/cache-api/cache-api-model-store.ts:34` (`no-control-regex`); typecheck and build fail on existing `src/infrastructure/cache-api/cache-api-model-store.browser.test.ts:130` (`TS2493`). These unrelated HEAD errors remain out of scope.
   - Rollback boundary: worklet transport acknowledgement, its focused tests, and any corresponding Mixer integration test only.
-  - Commit: pending.
+  - Commit: `57022da` (`fix(mixer): resume playback after pause`).
 
 ## Progress and next step
-Read-only diagnosis complete: `mixer-processor.ts` handled play/pause without posting progress; paused processing stopped the periodic progress path. Writer observed RED on the real AudioWorklet before the fix. GREEN focused browser 7/7 (parent spot-check also 7/7), full Node 367/367, full browser 144/144, and `git diff --check` passed. Existing unrelated lint (`cache-api-model-store.ts:34`, `no-control-regex`), typecheck, and build failures (`cache-api-model-store.browser.test.ts:130`, `TS2493`) persist from HEAD and remain out of scope. Implementation verified; task checkbox and commit identity pending parent commit.
+Implementation and synthetic AudioWorklet verification complete. The actual user's track playback was not manually re-tested. RDD disabled/unmanaged; no review was run. Next: user can retry Pause → Play in the Mixer and report any remaining mixer issue.
