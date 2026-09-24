@@ -317,11 +317,78 @@ test('the focused timeline seeks by one second and reaches both bounds without u
 
   timeline.style.width = '300px'
   const rect = timeline.getBoundingClientRect()
+  const clickX = rect.left + rect.width / 2
+  const clickEvent = new MouseEvent('click', {
+    bubbles: true,
+    clientX: clickX,
+  })
+  flushSync(() => timeline.dispatchEvent(clickEvent))
+  expect(testDeps.audioEngine.seekCalls.at(-1)).toBe(Math.round(((clickEvent.clientX - rect.left) / rect.width) * FRAME_COUNT))
+})
+
+test('timeline ruler exposes graduated ticks and a flag aligned with the shared playhead', async () => {
+  const testDeps = await buildDeps(baseTrack())
+  renderMixer(testDeps)
+  await waitForLoaded(testDeps.audioEngine)
+
+  const timeline = document.querySelector<HTMLElement>('.mixer-timeline-ruler')
+  const flag = document.querySelector<HTMLElement>('.mixer-playhead-flag')
+  const playhead = document.querySelector<HTMLElement>('.mixer-playhead')
+  if (timeline === null || flag === null || playhead === null) throw new Error('timeline controls not found')
+
+  expect(timeline.querySelectorAll('.mixer-timeline-graduation').length).toBeGreaterThan(10)
+  expect(timeline.querySelectorAll('.mixer-timeline-tick')).toHaveLength(5)
+  expect(flag.getAttribute('aria-hidden')).toBe('true')
+  expect(flag.style.left).toBe(playhead.style.left)
+
+  timeline.style.width = '300px'
+  const rect = timeline.getBoundingClientRect()
+  const clickX = Math.round(rect.left + rect.width * 0.6)
   flushSync(() => timeline.dispatchEvent(new MouseEvent('click', {
     bubbles: true,
-    clientX: rect.left + rect.width / 2,
+    clientX: clickX,
   })))
-  expect(testDeps.audioEngine.seekCalls.at(-1)).toBe(FRAME_COUNT / 2)
+
+  const updatedFlag = document.querySelector<HTMLElement>('.mixer-playhead-flag')!
+  const updatedPlayhead = document.querySelector<HTMLElement>('.mixer-playhead')!
+  expect(updatedFlag.style.left).toBe(updatedPlayhead.style.left)
+  expect(updatedFlag.style.left).toBe(`${(testDeps.audioEngine.seekCalls.at(-1)! / FRAME_COUNT) * 100}%`)
+})
+
+test('dragging the timeline flag scrubs continuously and clamps outside both track bounds', async () => {
+  const testDeps = await buildDeps(baseTrack())
+  renderMixer(testDeps)
+  await waitForLoaded(testDeps.audioEngine)
+
+  const timeline = document.querySelector<HTMLElement>('.mixer-timeline-ruler')
+  if (timeline === null) throw new Error('timeline not found')
+  timeline.style.width = '300px'
+  const rect = timeline.getBoundingClientRect()
+  timeline.setPointerCapture = () => {}
+  timeline.hasPointerCapture = () => false
+  timeline.releasePointerCapture = () => {}
+  const pointerEvent = (type: string, clientX: number): PointerEvent => new PointerEvent(type, {
+    bubbles: true,
+    pointerId: 7,
+    clientX,
+  })
+
+  flushSync(() => {
+    timeline.dispatchEvent(pointerEvent('pointerdown', Math.round(rect.left + rect.width * 0.2)))
+    timeline.dispatchEvent(pointerEvent('pointermove', Math.round(rect.left + rect.width * 0.7)))
+    timeline.dispatchEvent(pointerEvent('pointermove', Math.round(rect.left + rect.width * 1.2)))
+    timeline.dispatchEvent(pointerEvent('pointermove', Math.round(rect.left - rect.width * 0.2)))
+    timeline.dispatchEvent(pointerEvent('pointerup', Math.round(rect.left - rect.width * 0.2)))
+  })
+
+  expect(testDeps.audioEngine.seekCalls.slice(-4)).toEqual([
+    Math.round(((Math.round(rect.left + rect.width * 0.2) - rect.left) / rect.width) * FRAME_COUNT),
+    Math.round(((Math.round(rect.left + rect.width * 0.7) - rect.left) / rect.width) * FRAME_COUNT),
+    FRAME_COUNT,
+    0,
+  ])
+  const flag = document.querySelector<HTMLElement>('.mixer-playhead-flag')!
+  expect(flag.style.left).toBe('0%')
 })
 
 test('A/B loop markers are settable, clearable, and L toggles between the confirmed region and none', async () => {

@@ -1,4 +1,4 @@
-import type { KeyboardEvent, MouseEvent } from 'react'
+import { useRef, type KeyboardEvent, type MouseEvent, type PointerEvent } from 'react'
 import type { MixerSessionLane } from '../../application/ports/audio-engine-port'
 import type { LoopRange } from '../../domain/mixer/mixer'
 import { formatDuration } from '../format/format-duration'
@@ -36,10 +36,36 @@ export function MixerStrip({
   lanes, laneStates, peaksByLaneId, frameCount, sampleRate, currentSample, loopRange, pendingLoopStart,
   onSeekTo, onMuteToggle, onSoloToggle, onGainChange,
 }: MixerStripProps) {
+  const draggingPointerId = useRef<number | null>(null)
+
+  function sampleAtClientX(element: HTMLDivElement, clientX: number): number {
+    const rect = element.getBoundingClientRect()
+    const fraction = rect.width === 0 ? 0 : Math.min(1, Math.max(0, (clientX - rect.left) / rect.width))
+    return Math.round(fraction * frameCount)
+  }
+
   function handleTimelineClick(event: MouseEvent<HTMLDivElement>): void {
-    const rect = event.currentTarget.getBoundingClientRect()
-    const fraction = rect.width === 0 ? 0 : (event.clientX - rect.left) / rect.width
-    onSeekTo(Math.round(fraction * frameCount))
+    onSeekTo(sampleAtClientX(event.currentTarget, event.clientX))
+  }
+
+  function handleTimelinePointerDown(event: PointerEvent<HTMLDivElement>): void {
+    if (event.button !== 0) return
+    draggingPointerId.current = event.pointerId
+    event.currentTarget.setPointerCapture(event.pointerId)
+    onSeekTo(sampleAtClientX(event.currentTarget, event.clientX))
+  }
+
+  function handleTimelinePointerMove(event: PointerEvent<HTMLDivElement>): void {
+    if (draggingPointerId.current !== event.pointerId) return
+    onSeekTo(sampleAtClientX(event.currentTarget, event.clientX))
+  }
+
+  function handleTimelinePointerEnd(event: PointerEvent<HTMLDivElement>): void {
+    if (draggingPointerId.current !== event.pointerId) return
+    draggingPointerId.current = null
+    if (event.currentTarget.hasPointerCapture(event.pointerId)) {
+      event.currentTarget.releasePointerCapture(event.pointerId)
+    }
   }
 
   function handleTimelineKeyDown(event: KeyboardEvent<HTMLDivElement>): void {
@@ -82,8 +108,21 @@ export function MixerStrip({
         aria-valuenow={currentSample}
         aria-valuetext={`${formatDuration(currentSample / sampleRate)} of ${formatDuration(frameCount / sampleRate)}`}
         onClick={handleTimelineClick}
+        onPointerDown={handleTimelinePointerDown}
+        onPointerMove={handleTimelinePointerMove}
+        onPointerUp={handleTimelinePointerEnd}
+        onPointerCancel={handleTimelinePointerEnd}
         onKeyDown={handleTimelineKeyDown}
       >
+        <div className="mixer-timeline-graduations" aria-hidden="true">
+          {Array.from({ length: 101 }, (_, index) => (
+            <span
+              key={index}
+              className={`mixer-timeline-graduation${index % 25 === 0 ? ' mixer-timeline-graduation-major' : ''}`}
+              style={{ left: `${index}%` }}
+            />
+          ))}
+        </div>
         <div className="mixer-timeline-ticks" aria-hidden="true">
           {Array.from({ length: 5 }, (_, index) => (
             <span key={index} className="mixer-timeline-tick">
@@ -91,6 +130,14 @@ export function MixerStrip({
             </span>
           ))}
         </div>
+        <div
+          className="mixer-playhead-flag"
+          aria-hidden="true"
+          style={{
+            left: `${percentOf(currentSample, frameCount)}%`,
+            transform: `translateX(${currentSample <= 0 ? '0' : currentSample >= frameCount ? '-100%' : '-50%'})`,
+          }}
+        />
         {pendingLoopStart !== null && loopRange === null && (
           <div
             className="mixer-loop-marker mixer-loop-marker-pending"

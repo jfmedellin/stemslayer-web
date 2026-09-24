@@ -189,9 +189,13 @@ h1 { margin: 0 0 var(--space-4); font: var(--text-headline-xl); }
 
 .mixer-strip { display: flex; flex: 1; flex-direction: column; gap: var(--space-2); min-width: 0; min-height: 0; }
 .mixer-strip-caption { display: flex; justify-content: space-between; color: var(--color-text-secondary); font: var(--text-label-caps); letter-spacing: var(--label-caps-tracking); text-transform: uppercase; }
-.mixer-timeline-ruler { position: relative; height: 28px; margin-left: 204px; border-bottom: 1px solid var(--color-border-module); cursor: pointer; }
-.mixer-timeline-ticks { display: flex; justify-content: space-between; align-items: flex-start; height: 100%; pointer-events: none; }
+.mixer-timeline-ruler { position: relative; height: 28px; margin-left: 204px; border-bottom: 1px solid var(--color-border-module); cursor: ew-resize; touch-action: none; user-select: none; }
+.mixer-timeline-graduations { position: absolute; inset: 0; pointer-events: none; }
+.mixer-timeline-graduation { position: absolute; top: 18px; width: 1px; height: 6px; background: var(--color-border-module); }
+.mixer-timeline-graduation-major { height: 10px; background: var(--color-text-secondary); }
+.mixer-timeline-ticks { position: relative; z-index: 1; display: flex; justify-content: space-between; align-items: flex-start; height: 100%; pointer-events: none; }
 .mixer-timeline-tick { color: var(--color-text-secondary); font: var(--text-telemetry-sm); }
+.mixer-playhead-flag { position: absolute; z-index: 2; top: 0; width: 8px; height: 16px; background: var(--color-text-primary); clip-path: polygon(0 0, 100% 0, 100% 70%, 50% 100%, 0 70%); pointer-events: none; }
 .mixer-timeline-ruler:focus-visible { outline-offset: -3px; }
 .mixer-loop-marker { position: absolute; top: 0; transform: translateX(-50%); padding: 0 var(--space-2); font: var(--text-telemetry-sm); color: var(--color-gold); border-left: 1px solid var(--color-gold); white-space: nowrap; }
 .mixer-loop-marker-pending { color: var(--color-text-secondary); border-left-color: var(--color-text-secondary); }
@@ -248,7 +252,7 @@ h1 { margin: 0 0 var(--space-4); font: var(--text-headline-xl); }
   .upload-intro h1 { font: var(--text-headline-lg); }
   .profile-cards, .before-you-start { grid-template-columns: 1fr; }
   .mixer-track-header, .mixer-track-actions { flex-wrap: wrap; }
-  .mixer-timeline-ruler { margin-left: 0; }
+  .mixer-timeline-ruler { margin-left: 35%; }
   .mixer-waveform-overlay { left: 35%; }
   .mixer-lane-row { grid-template-columns: 4px minmax(120px, 35%) minmax(0, 1fr); }
 }
