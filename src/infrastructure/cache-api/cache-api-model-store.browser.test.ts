@@ -114,6 +114,25 @@ describe('CacheApiModelStore', () => {
     await expect(store.getFootprint(entry.profileId)).resolves.toEqual({ cached: true, sizeBytes: 3 })
   })
 
+  test('binds the default fetcher to the global object', async () => {
+    const defaultFetch = vi.fn(function (this: unknown): Promise<Response> {
+      if (this !== globalThis) throw new TypeError('Illegal invocation')
+      return Promise.resolve(responseWithChunks(new Uint8Array([97, 98, 99])))
+    })
+    vi.stubGlobal('fetch', defaultFetch)
+
+    try {
+      const store = new CacheApiModelStore({ manifest, cacheStorage: caches })
+
+      await store.ensure(entry.profileId, vi.fn())
+
+      expect(defaultFetch).toHaveBeenCalledOnce()
+      expect(defaultFetch.mock.calls[0]?.[0]).toBe(entry.url)
+    } finally {
+      vi.unstubAllGlobals()
+    }
+  })
+
   test('uses a verified cache hit without network access or progress', async () => {
     const cache = await caches.open(cacheNameForModel(entry))
     await cache.put(entry.url, new Response(new Uint8Array([97, 98, 99])))
@@ -185,7 +204,11 @@ describe('CacheApiModelStore', () => {
   test('fails closed with a typed download error when fetch rejects or returns an error', async () => {
     const rejectedFetch = vi.fn<typeof fetch>(async () => { throw new Error('offline') })
     const rejectedStore = new CacheApiModelStore({ manifest, cacheStorage: caches, fetcher: rejectedFetch })
-    await expect(rejectedStore.ensure(entry.profileId, vi.fn())).rejects.toBeInstanceOf(ModelDownloadError)
+    await expect(rejectedStore.ensure(entry.profileId, vi.fn())).rejects.toMatchObject({
+      name: 'ModelDownloadError',
+      profileId: entry.profileId,
+      message: `model-store.download_failed:${entry.profileId}: offline`,
+    })
 
     const failedStore = new CacheApiModelStore({
       manifest,

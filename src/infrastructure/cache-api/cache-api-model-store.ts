@@ -20,12 +20,19 @@ export class UnknownModelProfileError extends Error {
 }
 
 export class ModelDownloadError extends Error {
-  constructor(readonly profileId: string, readonly status?: number) {
-    super(status === undefined
+  constructor(readonly profileId: string, readonly status?: number, diagnosticMessage?: string) {
+    const identity = status === undefined
       ? `model-store.download_failed:${profileId}`
-      : `model-store.download_failed:${profileId}:${status}`)
+      : `model-store.download_failed:${profileId}:${status}`
+    super(diagnosticMessage === undefined ? identity : `${identity}: ${diagnosticMessage}`)
     this.name = 'ModelDownloadError'
   }
+}
+
+function safeDownloadDiagnostic(error: unknown): string | undefined {
+  if (!(error instanceof Error)) return undefined
+  const message = error.message.replace(/[\u0000-\u001F\u007F]/g, ' ').replace(/\s+/g, ' ').trim()
+  return message.length === 0 ? undefined : message.slice(0, 240)
 }
 
 export class ModelStreamError extends Error {
@@ -114,7 +121,7 @@ export class CacheApiModelStore implements ModelStorePort {
   constructor(options: CacheApiModelStoreOptions = {}) {
     this.manifest = options.manifest ?? PINNED_MODEL_MANIFEST
     this.cacheStorage = options.cacheStorage ?? caches
-    this.fetcher = options.fetcher ?? fetch
+    this.fetcher = options.fetcher ?? globalThis.fetch.bind(globalThis)
   }
 
   async getFootprint(profileId: string): Promise<ModelFootprint> {
@@ -211,8 +218,8 @@ export class CacheApiModelStore implements ModelStorePort {
     let response: Response
     try {
       response = await this.fetcher(entry.url)
-    } catch {
-      throw new ModelDownloadError(entry.profileId)
+    } catch (error) {
+      throw new ModelDownloadError(entry.profileId, undefined, safeDownloadDiagnostic(error))
     }
     if (!response.ok) throw new ModelDownloadError(entry.profileId, response.status)
     if (response.body === null) throw new ModelStreamError(entry.profileId)
