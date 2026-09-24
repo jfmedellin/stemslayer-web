@@ -127,7 +127,7 @@ describe('CacheApiModelStore', () => {
       await store.ensure(entry.profileId, vi.fn())
 
       expect(defaultFetch).toHaveBeenCalledOnce()
-      expect(defaultFetch.mock.calls[0]?.[0]).toBe(entry.url)
+      expect(defaultFetch).toHaveBeenCalledWith(entry.url)
     } finally {
       vi.unstubAllGlobals()
     }

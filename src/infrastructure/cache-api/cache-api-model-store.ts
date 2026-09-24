@@ -31,6 +31,10 @@ export class ModelDownloadError extends Error {
 
 function safeDownloadDiagnostic(error: unknown): string | undefined {
   if (!(error instanceof Error)) return undefined
+  // Control characters are stripped on purpose: a diagnostic copied from a
+  // rejected response body must not smuggle line breaks or terminal escapes
+  // into logs. Those regex literals are the intent, not a typo.
+  // eslint-disable-next-line no-control-regex
   const message = error.message.replace(/[\u0000-\u001F\u007F]/g, ' ').replace(/\s+/g, ' ').trim()
   return message.length === 0 ? undefined : message.slice(0, 240)
 }
