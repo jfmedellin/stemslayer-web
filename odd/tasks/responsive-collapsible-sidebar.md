@@ -49,7 +49,7 @@ The user wants more usable screen space and a layout that remains functional on 
   - Trigger evidence: coordinated behavior and responsive styling touches 3 non-trivial files; writer trigger applies. Four-file layout/accessibility mapping was delegated before implementation.
   - Forecast: approximately 120–220 authored changed lines.
   - Verification evidence: RED observed (3 new browser regressions failed before implementation); focused suite 11/11 passed; full browser suite 22 files / 155 tests passed; `git diff --check` passed. `npm run typecheck` still fails only with the known unrelated TS2493 at `src/infrastructure/cache-api/cache-api-model-store.browser.test.ts:130`.
-  - Commit: pending.
+  - Commit: `171cb17d3851e09961c8f82de4c5e0c75ddd4e04` — `feat(shell): add collapsible responsive navigation`.
   - RDD assessment: disabled/unmanaged; no review.
 
 ## Progress
@@ -63,4 +63,4 @@ The user wants more usable screen space and a layout that remains functional on 
 - Typecheck: `npm run typecheck` — known unrelated TS2493 failure at `src/infrastructure/cache-api/cache-api-model-store.browser.test.ts:130`.
 
 ## Next Step
-Commit the verified RSB-01 work unit and record the commit identity here and in the Engram mirror.
+RSB-01 is complete; no additional work is pending for this feature.
