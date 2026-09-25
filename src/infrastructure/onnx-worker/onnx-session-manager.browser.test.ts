@@ -53,15 +53,20 @@ describe('OnnxSessionManager against a real onnxruntime-web runtime (Chromium)',
     assertConstantStemsOutput(results.stems, EXPECTED_STEMS_VALUE)
   })
 
-  test('detects this browser\'s real navigator.gpu and resolves to the matching provider', async () => {
+  test('detects this browser\'s real navigator.gpu and resolves a runnable provider', async () => {
     const gpuPresent = typeof navigator !== 'undefined' && Boolean((navigator as unknown as { gpu?: unknown }).gpu)
     const manager = new OnnxSessionManager()
 
     const { session, provider } = await manager.createSession(rockBytes)
 
-    if (gpuPresent) {
-      expect(provider).toBe('webgpu')
-    } else {
+    // navigator.gpu only reports that the WebGPU entry point is exposed; it says
+    // nothing about a usable adapter. OnnxSessionManager documents a fallback to
+    // WASM on any WebGPU session failure, and a GPU-less CI runner exercises
+    // exactly that path, so a present-but-unusable GPU legitimately resolves to
+    // WASM. Assert the invariants that hold on every platform instead: a
+    // provider was chosen, and WebGPU is never chosen without navigator.gpu.
+    expect(['webgpu', 'wasm']).toContain(provider)
+    if (!gpuPresent) {
       expect(provider).toBe('wasm')
     }
 

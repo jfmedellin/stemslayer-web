@@ -352,7 +352,13 @@ test('timeline ruler exposes graduated ticks and a flag aligned with the shared 
   const updatedFlag = document.querySelector<HTMLElement>('.mixer-playhead-flag')!
   const updatedPlayhead = document.querySelector<HTMLElement>('.mixer-playhead')!
   expect(updatedFlag.style.left).toBe(updatedPlayhead.style.left)
-  expect(updatedFlag.style.left).toBe(`${(testDeps.audioEngine.seekCalls.at(-1)! / FRAME_COUNT) * 100}%`)
+  // The CSSOM serializes an inline percentage to six significant digits, so
+  // style.left can never round-trip the full double behind it. Compare the
+  // position as a frame index instead of as a string: the serializer drops at
+  // most 0.00005%, which is 0.12 of a frame at 240000 frames, so the index
+  // stays exact while a one-frame positioning error is still caught.
+  const flagFrame = Math.round((parseFloat(updatedFlag.style.left) / 100) * FRAME_COUNT)
+  expect(flagFrame).toBe(testDeps.audioEngine.seekCalls.at(-1)!)
 })
 
 test('dragging the timeline flag scrubs continuously and clamps outside both track bounds', async () => {
