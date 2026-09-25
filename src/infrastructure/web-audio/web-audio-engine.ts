@@ -11,9 +11,10 @@ import {
   type MixerWorkletLane,
   type MixerWorkletOutboundMessage,
 } from './protocol'
+import processorUrl from './mixer-processor.ts?worker&url'
 
 function defaultProcessorUrl(): URL {
-  return new URL('./mixer-processor.ts', import.meta.url)
+  return new URL(processorUrl, import.meta.url)
 }
 
 function workletFailure(message: string): Error {
