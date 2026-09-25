@@ -10,22 +10,22 @@ The current app is functional in local tests but is not release-ready: lint and 
 
 ## Scope and Authorization
 
-- This document authorizes **planning only**. It does not authorize source changes, dependency installation or registry access, Vercel/GitHub account access, push, deployment, release tagging, or public launch.
+- The user authorizes beginning the listed local implementation work on a feature branch, one work unit at a time. This does not authorize dependency installation or registry/network access, Vercel/GitHub account access, push, deployment, release tagging, or public launch. Product/legal decisions remain with the owner.
 - Target architecture: static Vite/React app on Vercel Hobby; audio and results stay in browser storage; model weights are fetched directly from pinned third-party mirrors and verified before use. Accounts and cloud sync are out of scope.
 - Preserve the existing GitHub Pages workflow until the owner chooses the production delivery path. Do not accidentally publish a second production site by pushing to `main`.
 - Preserve the documented Demucs weight-license caveat. Technical checks cannot grant a license or settle the owner's legal risk decision.
-- Each implementation task, once separately authorized, gets tests and documentation with its behavior and closes with a Conventional Commit. Do not treat a checkbox or this plan as release approval.
+- Each implementation task gets its applicable tests and documentation and closes with a Conventional Commit. Do not treat a checkbox or this plan as release approval.
 
 ## Baseline and Constraints
 
-| Item | Last observed evidence (2026-09-24) | Required exit |
+| Item | Last observed evidence (2026-09-25) | Required exit |
 | --- | --- | --- |
-| Working tree | Clean on `feat/p7b-onnx-worker` after responsive-navigation work | Recheck branch and changes before implementation and release |
-| Lint | Fails: `no-control-regex` in `src/infrastructure/cache-api/cache-api-model-store.ts:34` | Passes |
-| Typecheck | Fails: TS2493 in `src/infrastructure/cache-api/cache-api-model-store.browser.test.ts:130` | Passes |
-| Node tests | 34 files / 367 tests passed | Passes after changes |
-| Browser tests | 22 files / 155 tests passed | Passes after changes |
-| Production build | Not freshly validated because typecheck fails; existing `dist/assets/mixer-processor-*.ts` contains TypeScript | Fresh build and deployed mixer smoke test pass |
+| Starting point | Clean local `main` at `4e7a720`, matching local `origin/main` ref; branch `feat/first-public-release` created from that commit (no fetch performed) | Recheck branch and changes before each implementation task and release |
+| Lint | `npm run lint` passes; the recorded `no-control-regex` failure no longer reproduces | Passes |
+| Typecheck | `npm run typecheck` passes; the recorded TS2493 failure no longer reproduces | Passes |
+| Node tests | `npm test`: 34 files / 367 tests passed | Passes after changes |
+| Browser tests | `npm run test:browser`: 22 files / 161 tests passed after REL-01 | Passes after changes |
+| Production build | Not freshly validated in this baseline; existing `dist/assets/mixer-processor-*.ts` contains TypeScript | Fresh build and deployed mixer smoke test pass |
 | Security | No app backend or tracked obvious secret pattern in local scan; no complete advisory/history audit | Complete the targeted checks below |
 | RDD | User-disabled in prior project context | Do not re-enable or invoke review lifecycle without user instruction |
 
@@ -35,7 +35,7 @@ Strict TDD is enabled by project instruction. For implementation, observe RED �
 
 ### Gate A — Make the artifact trustworthy
 
-- [ ] **REL-01 — Restore a green validation baseline.** Fix the lint and TypeScript failures without suppressing useful rules; add/adjust focused regressions where behavior changes. **Accept:** `npm run lint`, `npm run typecheck`, `npm test`, and `npm run test:browser` all pass. **Route forecast:** delegated direct if both production and test logic need non-trivial edits; otherwise inline for a single mechanical fix. **Evidence:** exact command results and commit ID.
+- [x] **REL-01 — Restore a green validation baseline.** Historical lint/typecheck findings were stale; refreshed all checks and corrected the scale-sensitive keyboard-focus width assertion while retaining checks that the outline is visible and nonzero. **Route:** inline (one test file; mechanical assertion). Strict-TDD evidence: focused browser test RED reproduced (11 passed / 1 failed at 1.71429px), then GREEN (12/12). **Checks:** `npm run lint` pass; `npm run typecheck` pass; `npm test` 34 files / 367 tests pass; `npm run test:browser -- src/ui/shell/AppShell.browser.test.tsx` 12/12 pass; full `npm run test:browser` 22 files / 161 tests pass; `git diff --check` pass. Runtime harness: N/A (test assertion only; no runtime behavior changed). Rollback boundary: revert only the focus-outline assertion in `src/ui/shell/AppShell.browser.test.tsx` and this REL-01 evidence. Commit identity will be recorded after commit.
 - [ ] **REL-02 — Verify the production AudioWorklet and build.** Establish a failing production-artifact or served-build regression for the mixer, then ensure Vite emits executable JavaScript with resolvable imports and the correct MIME type. Test actual playback in the built app, not only the injected worklet test fixture. **Accept:** `npm run build` passes; no raw TypeScript worklet is served; a production-preview mixer smoke test plays a known stem. **Route forecast:** delegated direct (build wiring, browser regression, and source are separate non-trivial surfaces). **Evidence:** artifact inspection, browser result, and commit ID.
 
 ### Gate B — Bound untrusted inputs and dependencies
@@ -63,9 +63,9 @@ At final review, capture the commit, artifact hash, commands and results, suppor
 
 ## Progress
 
-- Plan created from the 2026-09-24 local read-only audit; no implementation task has started or been checked off.
-- Current evidence must be refreshed before implementation because the repository and hosting policies can change.
+- Plan created from the 2026-09-24 local read-only audit. On 2026-09-25, created `feat/first-public-release` from the clean local `main` at `4e7a720`; no remote operation was performed.
+- REL-01 completed on `feat/first-public-release`; all four acceptance commands pass. Its work-unit commit and final verification are recorded in the task evidence above. RDD was not invoked; local-only changes, no dependency/network or remote operations.
 
 ## Next Step
 
-Start with REL-01 after the user authorizes implementation. Recheck the working tree and TDD runner first; keep this document and its Engram mirror synchronized after each completed work unit.
+Proceed with REL-02 on `feat/first-public-release`: investigate the production AudioWorklet output and served-build behavior before changing build wiring; keep this document and its Engram mirror synchronized after each completed work unit.
