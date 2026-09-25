@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react'
+import { useEffect, useRef, useState } from 'react'
 import { addToLibrary, type AddToLibraryDeps, type AddToLibraryResult } from '../../application/add-to-library'
 import type { ModelFootprint } from '../../application/ports/model-store-port'
 import type { SeparationQueue } from '../../application/separation-queue'
@@ -12,6 +12,7 @@ import { estimateSeparationSeconds } from './estimate-seconds'
 import { FileCard } from './FileCard'
 import { primaryActionLabel } from './primary-action-label'
 import { ProfileCard } from './ProfileCard'
+import { parseAudioFileFormat } from './parse-audio-file-format'
 import { readAudioFileMetadata, type AudioFileMetadata } from './read-audio-file-metadata'
 
 export interface UploadPageProps {
@@ -35,6 +36,8 @@ type SubmissionState =
   | { readonly kind: 'failed'; readonly message: string }
 
 const EXTRA_FILES_MESSAGE = 'Only the first file was loaded — Stemslayer separates one file at a time.'
+const MAX_SOURCE_BYTES = 100 * 1024 * 1024
+const MAX_DURATION_SECONDS = 5 * 60
 
 function successCopyForDecision(decision: 'claimed' | 'reused' | 'awaiting' | 'adopted'): string {
   switch (decision) {
@@ -57,6 +60,7 @@ export function UploadPage({ deps, navigatorRef, queue }: UploadPageProps) {
   const [footprints, setFootprints] = useState<Readonly<Record<string, ModelFootprint>>>({})
   const [availableBytes, setAvailableBytes] = useState<number | null>(null)
   const [submission, setSubmission] = useState<SubmissionState>({ kind: 'idle' })
+  const selectionVersion = useRef(0)
 
   useEffect(() => {
     let cancelled = false
@@ -80,18 +84,58 @@ export function UploadPage({ deps, navigatorRef, queue }: UploadPageProps) {
   }, [deps])
 
   async function handleFilesChosen(files: readonly File[]): Promise<void> {
+    const version = ++selectionVersion.current
     setSubmission({ kind: 'idle' })
     setRejectionMessage(files.length > 1 ? EXTRA_FILES_MESSAGE : null)
 
     const file = files[0]
     if (file === undefined) return
 
-    const bytes = new Uint8Array(await file.arrayBuffer())
-    const metadata = await readAudioFileMetadata(file.name, bytes)
-    setLoaded({ fileName: file.name, bytes, metadata })
+    const reject = (message: string): void => {
+      if (version === selectionVersion.current) setRejectionMessage(message)
+    }
+
+    if (parseAudioFileFormat(file.name) === 'UNKNOWN') {
+      reject('Choose a supported audio format: WAV, MP3, FLAC, OGG, or M4A.')
+      return
+    }
+    if (file.size === 0) {
+      reject('This audio file is empty.')
+      return
+    }
+    if (file.size > MAX_SOURCE_BYTES) {
+      reject('Audio files must be no larger than 100 MiB.')
+      return
+    }
+
+    try {
+      const bytes = new Uint8Array(await file.arrayBuffer())
+      if (version !== selectionVersion.current) return
+      if (bytes.byteLength === 0) {
+        reject('This audio file is empty.')
+        return
+      }
+
+      const metadata = await readAudioFileMetadata(file.name, bytes)
+      if (version !== selectionVersion.current) return
+      const durationSeconds = metadata.durationSeconds
+      if (durationSeconds === null || !Number.isFinite(durationSeconds) || durationSeconds <= 0) {
+        reject('This audio file could not be decoded. Choose a valid, non-empty audio file.')
+        return
+      }
+      if (durationSeconds > MAX_DURATION_SECONDS) {
+        reject('Audio files must be no longer than 5 minutes.')
+        return
+      }
+
+      setLoaded({ fileName: file.name, bytes, metadata })
+    } catch {
+      reject('This audio file could not be read. Choose a valid audio file and try again.')
+    }
   }
 
   function handleChangeFile(): void {
+    selectionVersion.current += 1
     setLoaded(null)
     setRejectionMessage(null)
     setSubmission({ kind: 'idle' })
