@@ -183,7 +183,9 @@ export function UploadPage({ deps, navigatorRef, queue }: UploadPageProps) {
     <section className="upload-page" aria-labelledby="upload-page-title">
       <header className="upload-intro">
         <h1 id="upload-page-title">In-Browser Stem Separation</h1>
-        <p>Client-side audio separation. Your audio never leaves your device.</p>
+        <p className="upload-privacy-notice">
+          Processing happens in this browser. Your source audio is held temporarily for processing and is not saved to your library. Track details and saved stems are stored in this site’s browser storage; nothing in this flow is uploaded to Stemslayer. Model weights download from Hugging Face and its CDN. Storage may be cleared or evicted; Safari may delete site data after 7 days without a visit. Anyone using this browser profile on this site can access saved tracks; other browsers, devices, and site origins have separate storage.
+        </p>
       </header>
 
       <DropZone onFilesChosen={handleFilesChosen} />

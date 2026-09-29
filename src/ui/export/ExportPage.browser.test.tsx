@@ -286,8 +286,9 @@ test('"What you get" card and the storage notice show the exact fetched copy', a
   expect(card?.querySelector('.export-naming-pattern')?.textContent).toBe('<track> - <stem>.wav')
 
   expect(document.querySelector('.export-storage-notice')?.textContent).toBe(
-    'These stems live only in this browser. Safari deletes site data after 7 days without a visit; '
-    + 'other browsers may evict it under disk pressure. Download what you want to keep.',
+    'Track details and saved stems stay in this site’s browser storage. Anyone using this browser profile on this site can access saved tracks. '
+    + 'Storage may be cleared or evicted; Safari may delete site data after 7 days without a visit. Other browsers and site origins have separate storage. '
+    + 'Download what you want to keep.',
   )
 })
 
