@@ -114,6 +114,35 @@ describe('CacheApiModelStore', () => {
     await expect(store.getFootprint(entry.profileId)).resolves.toEqual({ cached: true, sizeBytes: 3 })
   })
 
+  test('cancels an oversized stream before retaining or reporting the crossing chunk', async () => {
+    const cancel = vi.fn()
+    const response = new Response(new ReadableStream<Uint8Array>({
+      start(controller) {
+        controller.enqueue(new Uint8Array([97, 98]))
+        controller.enqueue(new Uint8Array([99, 100]))
+      },
+      cancel,
+    }))
+    const progress = vi.fn()
+    const store = new CacheApiModelStore({
+      manifest,
+      cacheStorage: caches,
+      fetcher: fetchReturning(response),
+    })
+
+    await expect(store.ensure(entry.profileId, progress)).rejects.toMatchObject({
+      name: 'ModelSizeMismatchError',
+      expectedBytes: entry.sizeBytes,
+      actualBytes: 4,
+    })
+
+    expect(progress.mock.calls.map(([value]) => value)).toEqual([
+      { receivedBytes: 2, totalBytes: entry.sizeBytes },
+    ])
+    expect(cancel).toHaveBeenCalledOnce()
+    expect(await (await caches.open(cacheNameForModel(entry))).match(entry.url)).toBeUndefined()
+  })
+
   test('binds the default fetcher to the global object', async () => {
     const defaultFetch = vi.fn(function (this: unknown): Promise<Response> {
       if (this !== globalThis) throw new TypeError('Illegal invocation')
@@ -258,6 +287,10 @@ describe('CacheApiModelStore', () => {
   test.each([
     ['download', () => vi.fn<typeof fetch>(async () => { throw new Error('offline') }), ModelDownloadError],
     ['size', () => fetchReturning(responseWithChunks(new Uint8Array([100, 101]))), ModelSizeMismatchError],
+    ['overflow', () => fetchReturning(responseWithChunks(
+      new Uint8Array([100, 101]),
+      new Uint8Array([102, 103]),
+    )), ModelSizeMismatchError],
     ['digest', () => fetchReturning(responseWithChunks(new Uint8Array([97, 98, 99]))), ModelDigestMismatchError],
   ])('preserves the previous verified revision when the replacement has a %s failure', async (
     _failure,

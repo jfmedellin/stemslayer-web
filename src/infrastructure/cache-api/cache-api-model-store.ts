@@ -235,11 +235,17 @@ export class CacheApiModelStore implements ModelStorePort {
       while (true) {
         const { done, value } = await reader.read()
         if (done) break
+        const nextReceivedBytes = receivedBytes + value.byteLength
+        if (nextReceivedBytes > entry.sizeBytes) {
+          void reader.cancel().catch(() => undefined)
+          throw new ModelSizeMismatchError(entry.profileId, entry.sizeBytes, nextReceivedBytes)
+        }
         chunks.push(value)
-        receivedBytes += value.byteLength
+        receivedBytes = nextReceivedBytes
         onProgress(Object.freeze({ receivedBytes, totalBytes: entry.sizeBytes }))
       }
-    } catch {
+    } catch (error) {
+      if (error instanceof ModelSizeMismatchError) throw error
       throw new ModelStreamError(entry.profileId)
     } finally {
       reader.releaseLock()
