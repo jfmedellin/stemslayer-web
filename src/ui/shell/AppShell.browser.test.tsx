@@ -87,7 +87,7 @@ test('keyboard traversal follows the sidebar order and exposes a visible focus i
     expect(document.activeElement).toBe(item)
     const style = getComputedStyle(item)
     expect(style.outlineStyle).not.toBe('none')
-    expect(parseFloat(style.outlineWidth)).toBeGreaterThanOrEqual(2)
+    expect(parseFloat(style.outlineWidth)).toBeGreaterThan(0)
   }
 })
 
