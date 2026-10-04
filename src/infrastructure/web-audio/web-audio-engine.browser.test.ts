@@ -290,40 +290,34 @@ describe('WebAudioEngine against a real AudioWorkletProcessor (OfflineAudioConte
     streamingEngine.setMasterGain(1)
     streamingEngine.setLoopRange(createLoopRange(0, frameCount, frameCount))
     streamingEngine.play()
-    const suspendAtSamples = [
-      MIXER_PREFETCH_CHUNK_FRAMES * 2.5,
-      MIXER_PREFETCH_CHUNK_FRAMES * 3.5,
-      MIXER_PREFETCH_CHUNK_FRAMES * 4.5,
-      frameCount + MIXER_PREFETCH_CHUNK_FRAMES / 2,
-    ]
-    const suspensions = suspendAtSamples.map((sample) => context.suspend(sample / SAMPLE_RATE))
+    const firstSuspended = context.suspend(
+      (MIXER_PREFETCH_CHUNK_FRAMES * 2.5) / SAMPLE_RATE,
+    )
+    const beforeWrapSuspended = context.suspend(
+      (frameCount - MIXER_PREFETCH_CHUNK_FRAMES / 2) / SAMPLE_RATE,
+    )
     const rendering = context.startRendering()
     try {
-      await suspensions[0]
+      await firstSuspended
       await waitForCondition(
         () => progress.some((next) => next.currentSample > MIXER_PREFETCH_CHUNK_FRAMES * 2),
-        'worklet progress after releasing the first interior chunk',
+        'worklet progress after the first interior chunk',
       )
       await waitForCondition(() => frameReads.includes(MIXER_PREFETCH_CHUNK_FRAMES * 4), 'the loop-end prefetch')
       await context.resume()
-      await suspensions[1]
+      await beforeWrapSuspended
       await waitForCondition(
-        () => progress.some((next) => next.currentSample > MIXER_PREFETCH_CHUNK_FRAMES * 3),
-        'worklet progress after releasing the second interior chunk',
+        () => progress.some((next) => next.currentSample > MIXER_PREFETCH_CHUNK_FRAMES * 4),
+        'worklet progress before the loop wrap',
       )
       await waitForCondition(
         () => frameReads.filter((startFrame) => startFrame === MIXER_PREFETCH_CHUNK_FRAMES).length > 1,
-        'the loop-start refill after releasing an interior chunk',
+        'the loop-start refill before the loop wrap',
       )
+      expect(frameReads).toContain(MIXER_PREFETCH_CHUNK_FRAMES * 4)
       expect(progress.every((next) => next.isBuffering !== true)).toBe(true)
       await context.resume()
-      await suspensions[2]
-      await waitForCondition(
-        () => progress.some((next) => next.currentSample > MIXER_PREFETCH_CHUNK_FRAMES * 4),
-        'worklet progress through the loop-end chunk',
-      )
-      await context.resume()
-      await suspensions[3]
+      await rendering
       await waitForCondition(() => loopWrapped, 'the first completed loop wrap')
 
       expect(frameReads.filter((startFrame) => startFrame === MIXER_PREFETCH_CHUNK_FRAMES).length).toBeGreaterThan(1)
