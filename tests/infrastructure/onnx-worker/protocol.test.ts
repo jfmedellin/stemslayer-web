@@ -5,6 +5,7 @@ import {
   isWorkerMessage,
   isWorkerOutboundMessage,
 } from '../../../src/infrastructure/onnx-worker/protocol'
+import { MODEL_WINDOW_STRIDE } from '../../../src/infrastructure/onnx-worker/windowing'
 
 const channels = (): [Float32Array, Float32Array] => [
   new Float32Array([0.1, 0.2]),
@@ -24,12 +25,18 @@ const job = () => ({
 describe('Worker protocol deep validation', () => {
   test.each([
     ['job', job()],
+    ['ack', { kind: 'ack', trackId: 'track-1', resultKey: 'result', chunkIndex: 0 }],
     ['progress', {
       kind: 'progress', trackId: 'track-1', resultKey: 'result', window: 1, totalWindows: 4,
     }],
-    ['result', {
-      kind: 'result', trackId: 'track-1', resultKey: 'result', sampleRate: 44_100,
+    ['chunk', {
+      kind: 'chunk', trackId: 'track-1', resultKey: 'result', sampleRate: 44_100,
+      frameCount: 4, chunkIndex: 0, offset: 0,
       lanes: [{ laneId: 'vocals', channels: channels() }],
+    }],
+    ['complete', {
+      kind: 'complete', trackId: 'track-1', resultKey: 'result', sampleRate: 44_100,
+      frameCount: 4, lanes: ['vocals'],
     }],
     ['error', {
       kind: 'error', trackId: 'track-1', resultKey: 'result', message: 'boom', cancelled: false,
@@ -53,12 +60,26 @@ describe('Worker protocol deep validation', () => {
     ['progress beyond total', {
       kind: 'progress', trackId: 't', resultKey: 'r', window: 2, totalWindows: 1,
     }],
-    ['duplicate result lanes', {
-      kind: 'result', trackId: 't', resultKey: 'r', sampleRate: 44_100,
-      lanes: [{ laneId: 'vocals', channels: channels() }, { laneId: 'vocals', channels: channels() }],
+    ['negative chunk acknowledgement', {
+      kind: 'ack', trackId: 't', resultKey: 'r', chunkIndex: -1,
     }],
-    ['malformed result samples', {
-      kind: 'result', trackId: 't', resultKey: 'r', sampleRate: 44_100,
+    ['misaligned chunk lane lengths', {
+      kind: 'chunk', trackId: 't', resultKey: 'r', sampleRate: 44_100,
+      frameCount: 4, chunkIndex: 0, offset: 0,
+      lanes: [{ laneId: 'vocals', channels: [new Float32Array([1]), new Float32Array([1, 2])] }],
+    }],
+    ['chunk larger than the fixed transport bound', {
+      kind: 'chunk', trackId: 't', resultKey: 'r', sampleRate: 44_100,
+      frameCount: MODEL_WINDOW_STRIDE + 1, chunkIndex: 0, offset: 0,
+      lanes: [{ laneId: 'vocals', channels: [new Float32Array(MODEL_WINDOW_STRIDE + 1), new Float32Array(MODEL_WINDOW_STRIDE + 1)] }],
+    }],
+    ['completion with duplicate lanes', {
+      kind: 'complete', trackId: 't', resultKey: 'r', sampleRate: 44_100,
+      frameCount: 4, lanes: ['vocals', 'vocals'],
+    }],
+    ['malformed chunk samples', {
+      kind: 'chunk', trackId: 't', resultKey: 'r', sampleRate: 44_100,
+      frameCount: 1, chunkIndex: 0, offset: 0,
       lanes: [{ laneId: 'vocals', channels: [new Float32Array([1]), new Float32Array([Infinity])] }],
     }],
     ['non-boolean cancellation', {

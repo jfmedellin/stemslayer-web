@@ -2,7 +2,14 @@ import type * as ort from 'onnxruntime-web/webgpu'
 import { Tensor } from 'onnxruntime-web/webgpu'
 
 import { STFT_FREQ_BINS, buildCacInput, combineFrequencyAndTimeBranches, decodeCacOutputToWaveforms } from './stft'
-import { MODEL_SEGMENT_SAMPLES, processPlanarWindows, type PlanarWindowProcessor, type WindowProgress } from './windowing'
+import {
+  MODEL_SEGMENT_SAMPLES,
+  processPlanarWindows,
+  processPlanarWindowsStreaming,
+  type FinalizedWindowChunk,
+  type PlanarWindowProcessor,
+  type WindowProgress,
+} from './windowing'
 
 /** Basic's own ONNX input/output tensor names (`docs/decisions/weight-mirrors.md`). */
 const MIX_INPUT_NAME = 'mix'
@@ -23,6 +30,17 @@ export interface BasicInferenceResult {
   readonly stemCount: number
   readonly channelsPerStem: number
   /** `stemCount` entries, `BASIC_STEM_LANES` order when `stemCount` matches that array's length. */
+  readonly stems: readonly BasicStemWaveform[]
+}
+
+export interface BasicInferenceShape {
+  readonly stemCount: number
+  readonly channelsPerStem: number
+}
+
+export interface BasicInferenceChunk extends FinalizedWindowChunk {
+  readonly stemCount: number
+  readonly channelsPerStem: number
   readonly stems: readonly BasicStemWaveform[]
 }
 
@@ -66,7 +84,8 @@ function buildMixTensor(window: readonly Float32Array[]): ort.Tensor {
  * `stemCount` separate per-stem overlap-add reconstructions, while
  * guaranteeing by construction that the session runs exactly once per
  * window. The flat result is de-interleaved back into per-stem waveforms
- * after the call resolves, in `runBasicInference`.
+ * after the call resolves, in `runBasicInference`. The dedicated Worker uses
+ * `runBasicInferenceStreaming` so production output never becomes track-sized.
  *
  * The stem/channel count is never hardcoded -- it is read off the live
  * session's own `time` output shape on the first window (the same
@@ -220,4 +239,36 @@ export async function runBasicInference(
   }
 
   return Object.freeze({ stemCount, channelsPerStem, stems: Object.freeze(stems) })
+}
+
+/** Production worker variant: retains only the active overlap window and awaits each chunk consumer. */
+export async function runBasicInferenceStreaming(
+  session: ort.InferenceSession,
+  planarMix: readonly Float32Array[],
+  onChunk: (chunk: BasicInferenceChunk) => void | Promise<void>,
+  onProgress?: (progress: WindowProgress) => void,
+): Promise<BasicInferenceShape> {
+  let stemCount: number | undefined
+  let channelsPerStem: number | undefined
+  const processor = createBasicWindowProcessor(session, (count, channels) => {
+    stemCount = count
+    channelsPerStem = channels
+  })
+  await processPlanarWindowsStreaming(planarMix, processor, async ({ offset, channels }) => {
+    if (stemCount === undefined || channelsPerStem === undefined) {
+      throw new Error('basic-inference.no_windows_processed No window was run through the session.')
+    }
+    const stems: BasicStemWaveform[] = []
+    for (let stem = 0; stem < stemCount; stem += 1) {
+      stems.push(Object.freeze([
+        channels[stem * channelsPerStem],
+        channels[stem * channelsPerStem + 1],
+      ]))
+    }
+    await onChunk({ offset, channels, stemCount, channelsPerStem, stems: Object.freeze(stems) })
+  }, onProgress)
+  if (stemCount === undefined || channelsPerStem === undefined) {
+    throw new Error('basic-inference.no_windows_processed No window was run through the session.')
+  }
+  return Object.freeze({ stemCount, channelsPerStem })
 }

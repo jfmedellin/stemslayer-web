@@ -1,10 +1,17 @@
 import { resolveStemProfile } from '../../application/resolve-stem-profile'
 import { BASIC_PROFILE, ROCK_PROFILE } from '../../domain/stem-profile'
-import { BASIC_STEM_LANES, runBasicInference } from './basic-inference'
+import { BASIC_STEM_LANES, runBasicInferenceStreaming } from './basic-inference'
 import { OnnxSessionManager } from './onnx-session-manager'
-import { isWorkerJobMessage, type WorkerErrorMessage, type WorkerJobMessage, type WorkerOutboundMessage, type WorkerResultMessage } from './protocol'
-import { ROCK_STEM_LANES, runRockInference } from './rock-inference'
-import { assembleStemLanes, type NamedRawStem } from './stem-lane-assembler'
+import {
+  isWorkerAckMessage,
+  isWorkerJobMessage,
+  type WorkerErrorMessage,
+  type WorkerJobMessage,
+  type WorkerOutboundMessage,
+  type WorkerChunkMessage,
+} from './protocol'
+import { ROCK_STEM_LANES, runRockInferenceStreaming } from './rock-inference'
+import { assembleStemLaneChunks, type NamedRawStem } from './stem-lane-assembler'
 
 interface WorkerScope {
   onmessage: ((event: MessageEvent<unknown>) => void) | null
@@ -33,13 +40,41 @@ function namedRawStems(names: readonly string[], stems: readonly (readonly Float
   return names.map((rawId, index) => ({ rawId, channels: stems[index] }))
 }
 
-async function execute(message: WorkerJobMessage): Promise<WorkerResultMessage> {
+let pendingAck: { readonly trackId: string; readonly resultKey: string; readonly chunkIndex: number; readonly resolve: () => void } | undefined
+
+async function execute(message: WorkerJobMessage): Promise<void> {
   if (message.sampleRate !== 44_100) throw new Error(`onnx-worker.unsupported_sample_rate:${message.sampleRate}`)
 
   const profile = resolveStemProfile(message.profileId)
   const { session } = await new OnnxSessionManager().createSession(message.modelBytes)
+  const frameCount = message.planarChannels[0].length
   let lastWindow = 0
   let totalWindows: number | undefined
+  let chunkIndex = 0
+  const streamChunk = async (offset: number, stems: readonly (readonly Float32Array[])[]): Promise<void> => {
+    const raw = namedRawStems(profile.profileId === BASIC_PROFILE.profileId ? BASIC_STEM_LANES : ROCK_STEM_LANES, stems)
+    const lanes = assembleStemLaneChunks(profile, raw).map(({ laneId, channels }) => ({
+      laneId,
+      channels: channels as readonly [Float32Array, Float32Array],
+    }))
+    const currentIndex = chunkIndex++
+    const chunk: WorkerChunkMessage = {
+      kind: 'chunk',
+      trackId: message.trackId,
+      resultKey: message.resultKey,
+      sampleRate: message.sampleRate,
+      frameCount,
+      chunkIndex: currentIndex,
+      offset,
+      lanes,
+    }
+    const transfer = lanes.flatMap(({ channels }) => channels.map(({ buffer }) => buffer))
+    const acknowledged = new Promise<void>((resolve) => {
+      pendingAck = { trackId: message.trackId, resultKey: message.resultKey, chunkIndex: currentIndex, resolve }
+    })
+    scope.postMessage(chunk, transfer)
+    await acknowledged
+  }
   const onProgress = ({ window, totalWindows: total }: { window: number; totalWindows: number }): void => {
     if (window < lastWindow || (totalWindows !== undefined && total !== totalWindows)) {
       throw new Error('onnx-worker.non_monotonic_progress')
@@ -56,29 +91,41 @@ async function execute(message: WorkerJobMessage): Promise<WorkerResultMessage> 
   }
 
   try {
-    const raw = profile.profileId === BASIC_PROFILE.profileId
-      ? namedRawStems(BASIC_STEM_LANES, (await runBasicInference(session, message.planarChannels, onProgress)).stems)
-      : profile.profileId === ROCK_PROFILE.profileId
-        ? namedRawStems(ROCK_STEM_LANES, (await runRockInference(session, message.planarChannels, onProgress)).stems)
-        : (() => { throw new Error(`onnx-worker.unsupported_profile:${profile.profileId}`) })()
-    const lanes = assembleStemLanes(profile, raw).map(({ laneId, channels }) => ({
-      laneId,
-      channels: channels as readonly [Float32Array, Float32Array],
-    }))
-    return {
-      kind: 'result',
-      trackId: message.trackId,
-      resultKey: message.resultKey,
-      sampleRate: message.sampleRate,
-      lanes,
+    if (profile.profileId === BASIC_PROFILE.profileId) {
+      await runBasicInferenceStreaming(session, message.planarChannels, (chunk) => streamChunk(chunk.offset, chunk.stems), onProgress)
+    } else if (profile.profileId === ROCK_PROFILE.profileId) {
+      await runRockInferenceStreaming(session, message.planarChannels, (chunk) => streamChunk(chunk.offset, chunk.stems), onProgress)
+    } else {
+      throw new Error(`onnx-worker.unsupported_profile:${profile.profileId}`)
     }
   } finally {
     await session.release()
   }
+  scope.postMessage({
+    kind: 'complete',
+    trackId: message.trackId,
+    resultKey: message.resultKey,
+    sampleRate: message.sampleRate,
+    frameCount,
+    lanes: profile.lanes.map(({ laneId }) => laneId),
+  })
 }
 
 scope.onmessage = (event): void => {
   const received = event.data
+  if (isWorkerAckMessage(received)) {
+    if (
+      pendingAck !== undefined
+      && received.trackId === pendingAck.trackId
+      && received.resultKey === pendingAck.resultKey
+      && received.chunkIndex === pendingAck.chunkIndex
+    ) {
+      const ack = pendingAck
+      pendingAck = undefined
+      ack.resolve()
+    }
+    return
+  }
   if (!isWorkerJobMessage(received)) {
     const ids = correlation(received)
     const failure: WorkerErrorMessage = {
@@ -91,10 +138,7 @@ scope.onmessage = (event): void => {
     return
   }
 
-  void execute(received).then((result) => {
-    const transfer = result.lanes.flatMap(({ channels }) => channels.map(({ buffer }) => buffer))
-    scope.postMessage(result, transfer)
-  }, (error: unknown) => {
+  void execute(received).catch((error: unknown) => {
     scope.postMessage({
       kind: 'error',
       trackId: received.trackId,

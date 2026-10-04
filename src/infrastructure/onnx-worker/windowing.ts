@@ -13,6 +13,11 @@ export type PlanarWindowProcessor = (
   window: readonly Float32Array[],
 ) => readonly Float32Array[] | Promise<readonly Float32Array[]>
 
+export interface FinalizedWindowChunk {
+  readonly offset: number
+  readonly channels: readonly Float32Array[]
+}
+
 /**
  * Returns the deterministic S2 offsets. A non-empty signal always starts at
  * zero and every subsequent stride starts another window, including a final
@@ -106,42 +111,66 @@ export async function processPlanarWindows(
   onProgress?: (progress: WindowProgress) => void,
 ): Promise<readonly Float32Array[]> {
   const frameCount = validateInput(input)
+  let channels: Float32Array[] | undefined
+  await processPlanarWindowsStreaming(input, processWindow, ({ offset, channels: chunk }) => {
+    channels ??= Array.from({ length: chunk.length }, () => new Float32Array(frameCount))
+    chunk.forEach((channel, index) => channels![index].set(channel, offset))
+  }, onProgress)
+  if (channels === undefined) throw new Error('windowing.invalid_output_shape No output windows were produced.')
+  return Object.freeze(channels)
+}
+
+/** Emits normalized samples as soon as no later 25%-overlap window can affect them. */
+export async function processPlanarWindowsStreaming(
+  input: readonly Float32Array[],
+  processWindow: PlanarWindowProcessor,
+  onChunk: (chunk: FinalizedWindowChunk) => void | Promise<void>,
+  onProgress?: (progress: WindowProgress) => void,
+  onBufferCapacity?: (samplesPerChannel: number) => void,
+): Promise<void> {
+  const frameCount = validateInput(input)
   const offsets = createWindowOffsets(frameCount)
   const weight = createTriangularWeight()
-  const accumulatedWeight = new Float64Array(frameCount)
+  let base = 0
+  const accumulatedWeight = new Float64Array(MODEL_SEGMENT_SAMPLES)
   let accumulatedChannels: Float64Array[] | undefined
-  let outputChannelCount: number | undefined
 
   for (let windowIndex = 0; windowIndex < offsets.length; windowIndex += 1) {
     const offset = offsets[windowIndex]
     const naturalLength = Math.min(MODEL_SEGMENT_SAMPLES, frameCount - offset)
     const centered = createCenteredWindow(input, frameCount, offset, naturalLength)
     const output = await processWindow(centered.planar)
-    outputChannelCount = validateOutput(output, outputChannelCount)
-
-    if (accumulatedChannels === undefined) {
-      accumulatedChannels = Array.from({ length: outputChannelCount }, () => new Float64Array(frameCount))
-    }
+    const outputChannelCount = validateOutput(output, accumulatedChannels?.length)
+    accumulatedChannels ??= Array.from({ length: outputChannelCount }, () => new Float64Array(MODEL_SEGMENT_SAMPLES))
 
     for (let sample = 0; sample < naturalLength; sample += 1) {
-      const segmentWeight = weight[sample]
-      const destination = offset + sample
-      accumulatedWeight[destination] += segmentWeight
+      const local = offset + sample - base
+      const modelCoordinate = centered.trimStart + sample
+      const segmentWeight = weight[modelCoordinate]
+      accumulatedWeight[local] += segmentWeight
       for (let channel = 0; channel < outputChannelCount; channel += 1) {
-        accumulatedChannels[channel][destination] += output[channel][centered.trimStart + sample] * segmentWeight
+        accumulatedChannels[channel][local] += output[channel][modelCoordinate] * segmentWeight
       }
     }
 
+    const flushLength = windowIndex + 1 < offsets.length ? offsets[windowIndex + 1] - base : frameCount - base
+    const finalized = Object.freeze(accumulatedChannels.map((channel) => {
+      const chunk = new Float32Array(flushLength)
+      for (let sample = 0; sample < flushLength; sample += 1) {
+        chunk[sample] = channel[sample] / accumulatedWeight[sample]
+      }
+      return chunk
+    }))
+    await onChunk({ offset: base, channels: finalized })
+    const remaining = MODEL_SEGMENT_SAMPLES - flushLength
+    for (const channel of accumulatedChannels) {
+      channel.copyWithin(0, flushLength, flushLength + remaining)
+      channel.fill(0, remaining)
+    }
+    accumulatedWeight.copyWithin(0, flushLength, flushLength + remaining)
+    accumulatedWeight.fill(0, remaining)
+    base += flushLength
+    onBufferCapacity?.(MODEL_SEGMENT_SAMPLES)
     onProgress?.({ window: windowIndex + 1, totalWindows: offsets.length })
   }
-
-  if (accumulatedChannels === undefined) {
-    throw new Error('windowing.invalid_output_shape No output windows were produced.')
-  }
-
-  return Object.freeze(
-    accumulatedChannels.map((channel) =>
-      Float32Array.from(channel, (sample, index) => sample / accumulatedWeight[index]),
-    ),
-  )
 }

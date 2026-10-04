@@ -1,3 +1,5 @@
+import { MODEL_WINDOW_STRIDE } from './windowing'
+
 /** Transferable main-thread -> inference Worker job. */
 export interface WorkerJobMessage {
   readonly kind: 'job'
@@ -17,17 +19,36 @@ export interface WorkerProgressMessage {
   readonly totalWindows: number
 }
 
-export interface WorkerResultLane {
+export interface WorkerLaneChunkMessage {
   readonly laneId: string
   readonly channels: readonly [Float32Array, Float32Array]
 }
 
-export interface WorkerResultMessage {
-  readonly kind: 'result'
+export interface WorkerChunkMessage {
+  readonly kind: 'chunk'
   readonly trackId: string
   readonly resultKey: string
   readonly sampleRate: number
-  readonly lanes: readonly WorkerResultLane[]
+  readonly frameCount: number
+  readonly chunkIndex: number
+  readonly offset: number
+  readonly lanes: readonly WorkerLaneChunkMessage[]
+}
+
+export interface WorkerCompleteMessage {
+  readonly kind: 'complete'
+  readonly trackId: string
+  readonly resultKey: string
+  readonly sampleRate: number
+  readonly frameCount: number
+  readonly lanes: readonly string[]
+}
+
+export interface WorkerAckMessage {
+  readonly kind: 'ack'
+  readonly trackId: string
+  readonly resultKey: string
+  readonly chunkIndex: number
 }
 
 export interface WorkerErrorMessage {
@@ -38,8 +59,8 @@ export interface WorkerErrorMessage {
   readonly cancelled: boolean
 }
 
-export type WorkerOutboundMessage = WorkerProgressMessage | WorkerResultMessage | WorkerErrorMessage
-export type WorkerMessage = WorkerJobMessage | WorkerOutboundMessage
+export type WorkerOutboundMessage = WorkerProgressMessage | WorkerChunkMessage | WorkerCompleteMessage | WorkerErrorMessage
+export type WorkerMessage = WorkerJobMessage | WorkerAckMessage | WorkerOutboundMessage
 
 type UnknownRecord = Record<string, unknown>
 
@@ -93,22 +114,52 @@ function isProgress(message: UnknownRecord): boolean {
     && message.window <= message.totalWindows
 }
 
-function isResultLane(value: unknown): value is WorkerResultLane {
+function isLaneChunk(value: unknown): value is WorkerLaneChunkMessage {
   const lane = record(value)
   return lane !== undefined && nonEmptyString(lane.laneId) && stereo(lane.channels)
 }
 
-function isResult(message: UnknownRecord): boolean {
+export function isWorkerAckMessage(value: unknown): value is WorkerAckMessage {
+  const message = record(value)
+  return message !== undefined
+    && message.kind === 'ack'
+    && correlation(message)
+    && Number.isSafeInteger(message.chunkIndex)
+    && (message.chunkIndex as number) >= 0
+}
+
+function isChunk(message: UnknownRecord): boolean {
   if (
-    message.kind !== 'result'
+    message.kind !== 'chunk'
     || !correlation(message)
     || !positiveInteger(message.sampleRate)
+    || !positiveInteger(message.frameCount)
+    || !Number.isSafeInteger(message.chunkIndex)
+    || (message.chunkIndex as number) < 0
+    || !Number.isSafeInteger(message.offset)
+    || (message.offset as number) < 0
     || !Array.isArray(message.lanes)
     || message.lanes.length === 0
-    || !message.lanes.every(isResultLane)
+    || !message.lanes.every(isLaneChunk)
   ) return false
   const ids = message.lanes.map(({ laneId }) => laneId)
-  return new Set(ids).size === ids.length
+  const length = (message.lanes[0] as WorkerLaneChunkMessage).channels[0].length
+  return length > 0
+    && length <= MODEL_WINDOW_STRIDE
+    && (message.offset as number) + length <= (message.frameCount as number)
+    && message.lanes.every((lane) => lane.channels[0].length === length)
+    && new Set(ids).size === ids.length
+}
+
+function isComplete(message: UnknownRecord): boolean {
+  return message.kind === 'complete'
+    && correlation(message)
+    && positiveInteger(message.sampleRate)
+    && positiveInteger(message.frameCount)
+    && Array.isArray(message.lanes)
+    && message.lanes.length > 0
+    && message.lanes.every(nonEmptyString)
+    && new Set(message.lanes).size === message.lanes.length
 }
 
 function isError(message: UnknownRecord): boolean {
@@ -120,10 +171,12 @@ function isError(message: UnknownRecord): boolean {
 
 export function isWorkerOutboundMessage(value: unknown): value is WorkerOutboundMessage {
   const message = record(value)
-  return message !== undefined && (isProgress(message) || isResult(message) || isError(message))
+  return message !== undefined && (
+    isProgress(message) || isChunk(message) || isComplete(message) || isError(message)
+  )
 }
 
 /** Deep-validates every field crossing the Worker trust boundary. */
 export function isWorkerMessage(value: unknown): value is WorkerMessage {
-  return isWorkerJobMessage(value) || isWorkerOutboundMessage(value)
+  return isWorkerJobMessage(value) || isWorkerAckMessage(value) || isWorkerOutboundMessage(value)
 }

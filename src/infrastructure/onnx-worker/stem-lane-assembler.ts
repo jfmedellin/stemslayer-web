@@ -167,3 +167,11 @@ export function assembleStemLanes(
   if (profile.profileId === ROCK_PROFILE.profileId) return assembleRock(profile, raw)
   return fail(`unknown_profile:${profile.profileId}`)
 }
+
+/** Assembles one bounded inference chunk; no lane array spans the whole track. */
+export function assembleStemLaneChunks(
+  profile: StemProfile,
+  rawStems: readonly NamedRawStem[],
+): readonly AssembledStemLane[] {
+  return assembleStemLanes(profile, rawStems)
+}

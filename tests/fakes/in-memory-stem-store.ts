@@ -1,4 +1,5 @@
 import type { StemStorePort } from '../../src/application/ports/stem-store-port'
+import { encodeFloat32Wav } from '../../src/domain/audio/float32-wav'
 
 function laneKey(resultKey: string, laneId: string): string {
   return `${resultKey}/${laneId}`
@@ -13,6 +14,37 @@ export class InMemoryStemStore implements StemStorePort {
     this.lanes.set(laneKey(resultKey, laneId), audio)
     this.keys.add(resultKey)
     this.keys.add(laneKey(resultKey, laneId))
+  }
+
+  async beginLaneWrite(resultKey: string, laneId: string, sampleRate: number, frameCount: number) {
+    const chunks: Float32Array[][] = [[], []]
+    let frames = 0
+    let done = false
+    return {
+      writeChunk: async (planar: readonly Float32Array[]): Promise<void> => {
+        if (done || planar.length !== 2 || planar[0].length !== planar[1].length) {
+          throw new Error('stem-store.invalid_stream_chunk')
+        }
+        frames += planar[0].length
+        if (frames > frameCount) throw new Error('stem-store.too_many_frames')
+        chunks[0].push(planar[0].slice())
+        chunks[1].push(planar[1].slice())
+      },
+      finalize: async (): Promise<void> => {
+        if (done || frames !== frameCount) throw new Error('stem-store.incomplete_stream')
+        const planar = chunks.map((parts) => {
+          const channel = new Float32Array(frameCount)
+          let offset = 0
+          for (const part of parts) { channel.set(part, offset); offset += part.length }
+          return channel
+        })
+        await this.writeLane(resultKey, laneId, encodeFloat32Wav({ sampleRate, planar }))
+        done = true
+      },
+      abort: async (): Promise<void> => {
+        done = true
+      },
+    }
   }
 
   async readLane(resultKey: string, laneId: string): Promise<Uint8Array> {

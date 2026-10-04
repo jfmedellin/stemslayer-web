@@ -1,5 +1,6 @@
 import { afterEach, beforeEach, expect, test } from 'vitest'
 
+import { encodeFloat32Wav } from '../../domain/audio/float32-wav'
 import { OpfsStemStore, StorageQuotaExceededError } from './opfs-stem-store'
 
 let rootDirectoryName: string
@@ -26,6 +27,121 @@ test('writeLane then readLane round trips the exact bytes', async () => {
   await store.writeLane('stems/track-1', 'vocals', audio)
 
   await expect(store.readLane('stems/track-1', 'vocals')).resolves.toEqual(audio)
+})
+
+test('incremental lane writer emits byte-identical WAV and finalizes only after all frames arrive', async () => {
+  const store = newStore()
+  const left = Float32Array.from([0.1, -0.2, 0.3, -0.4])
+  const right = Float32Array.from([-0.5, 0.6, -0.7, 0.8])
+  const writer = await store.beginLaneWrite('stems/streamed', 'vocals', 44_100, left.length)
+
+  await writer.writeChunk([left.subarray(0, 2), right.subarray(0, 2)])
+  await writer.writeChunk([left.subarray(2), right.subarray(2)])
+  await writer.finalize()
+
+  await expect(store.readLane('stems/streamed', 'vocals')).resolves.toEqual(
+    encodeFloat32Wav({ sampleRate: 44_100, planar: [left, right] }),
+  )
+})
+
+test('aborting an incremental lane writer removes its partial file', async () => {
+  const store = newStore()
+  const writer = await store.beginLaneWrite('stems/aborted', 'vocals', 44_100, 4)
+  await writer.writeChunk([new Float32Array([0.1, 0.2]), new Float32Array([0.3, 0.4])])
+
+  await writer.abort()
+
+  await expect(store.exists('stems/aborted/vocals')).resolves.toBe(false)
+})
+
+test('incremental quota refusal maps to the typed error and removes the partial lane', async () => {
+  let writes = 0
+  const store = newStore({
+    createWritable: async () => ({
+      write: async () => {
+        writes += 1
+        if (writes === 2) throw new DOMException('mock quota exceeded', 'QuotaExceededError')
+      },
+      close: async () => undefined,
+      abort: async () => undefined,
+    } as unknown as FileSystemWritableFileStream),
+  })
+  const writer = await store.beginLaneWrite('stems/quota-stream', 'vocals', 44_100, 2)
+
+  await expect(writer.writeChunk([new Float32Array([0.1, 0.2]), new Float32Array([0.3, 0.4])]))
+    .rejects.toBeInstanceOf(StorageQuotaExceededError)
+  await expect(store.exists('stems/quota-stream/vocals')).resolves.toBe(false)
+})
+
+test('finalize rejects a truncated lane and removes its partial WAV', async () => {
+  const store = newStore()
+  const writer = await store.beginLaneWrite('stems/truncated', 'vocals', 44_100, 4)
+  await writer.writeChunk([new Float32Array([0.1, 0.2]), new Float32Array([0.3, 0.4])])
+
+  await expect(writer.finalize()).rejects.toThrow('opfs-stem-store.incomplete_stream:2:4')
+  await expect(store.exists('stems/truncated/vocals')).resolves.toBe(false)
+})
+
+test('a malformed non-finite chunk aborts and removes partial OPFS output', async () => {
+  const store = newStore()
+  const writer = await store.beginLaneWrite('stems/malformed', 'vocals', 44_100, 2)
+
+  await expect(writer.writeChunk([
+    Float32Array.from([0.1, Number.NaN]),
+    Float32Array.from([0.3, 0.4]),
+  ])).rejects.toThrow('opfs-stem-store.non_finite_sample')
+  await expect(store.exists('stems/malformed/vocals')).resolves.toBe(false)
+})
+
+test('a chunk overrun aborts and removes partial OPFS output', async () => {
+  const store = newStore()
+  const writer = await store.beginLaneWrite('stems/overrun', 'vocals', 44_100, 2)
+  await writer.writeChunk([Float32Array.from([0.1]), Float32Array.from([0.2])])
+
+  await expect(writer.writeChunk([
+    Float32Array.from([0.3, 0.4]),
+    Float32Array.from([0.5, 0.6]),
+  ])).rejects.toThrow('opfs-stem-store.too_many_frames')
+  await expect(store.exists('stems/overrun/vocals')).resolves.toBe(false)
+})
+
+test('a failed cleanup preserves both errors and a later abort retries file removal', async () => {
+  const cleanupFailure = new Error('test.remove_entry_failed')
+  let removeAttempts = 0
+  const store = newStore({
+    removeEntry: async (directory, name) => {
+      removeAttempts += 1
+      if (removeAttempts === 1) throw cleanupFailure
+      await directory.removeEntry(name)
+    },
+  })
+  const writer = await store.beginLaneWrite('stems/retry-cleanup', 'vocals', 44_100, 2)
+
+  let writeFailure: unknown
+  try {
+    await writer.writeChunk([
+      Float32Array.from([0.1, Number.NaN]),
+      Float32Array.from([0.3, 0.4]),
+    ])
+  } catch (error) {
+    writeFailure = error
+  }
+
+  expect(writeFailure).toBeInstanceOf(AggregateError)
+  expect((writeFailure as AggregateError).errors).toEqual([
+    expect.objectContaining({ message: 'opfs-stem-store.non_finite_sample' }),
+    cleanupFailure,
+  ])
+  await expect(store.exists('stems/retry-cleanup/vocals')).resolves.toBe(true)
+  await expect(writer.writeChunk([
+    Float32Array.from([0.2]),
+    Float32Array.from([0.3]),
+  ])).rejects.toThrow('opfs-stem-store.stream_not_open')
+
+  await writer.abort()
+
+  expect(removeAttempts).toBe(2)
+  await expect(store.exists('stems/retry-cleanup/vocals')).resolves.toBe(false)
 })
 
 test('writeLane can write more than one lane under the same result key', async () => {
