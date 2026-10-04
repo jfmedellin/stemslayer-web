@@ -1,4 +1,4 @@
-# First Public Release — Vercel Hobby Readiness
+# First Public Release — GitHub Pages Readiness
 
 ## Objective
 
@@ -10,6 +10,7 @@ The current app is functional in local tests but is not release-ready: lint and 
 
 ## Scope and Authorization
 
+- **Current scope (2026-10-04) supersedes historical hosting and publication notes below:** GitHub Pages is the sole selected public personal beta host. PR #33 and #35 are merged. The parent is authorized to push pending review branches and create linked PRs using its approved GitHub session, not merge or tag a release. This slice integrates existing REL-05/REL-06 work only; it does not enable longer songs. The accumulated `feat/first-public-release` branch still contains the later memory-safe duration work awaiting its own integration and acceptance.
 - The user authorizes beginning the listed local implementation work on a feature branch, one work unit at a time. This does not authorize dependency installation or registry/network access, Vercel/GitHub account access, push, deployment, release tagging, or public launch. Product/legal decisions remain with the owner.
 - Target architecture: static Vite/React app on Vercel Hobby; audio and results stay in browser storage; model weights are fetched directly from pinned third-party mirrors and verified before use. Accounts and cloud sync are out of scope.
 - Preserve the existing GitHub Pages workflow until the owner chooses the production delivery path. Do not accidentally publish a second production site by pushing to `main`.
@@ -37,10 +38,10 @@ Strict TDD is enabled by project instruction. For implementation, observe RED �
 - **Route:** delegated direct, existing six-commit integration plus tracker reconciliation; no new source behavior, dependencies, installation, remote operation, or RDD lifecycle. RDD is globally OFF. Strict TDD remains enabled; reuse recorded RED/GREEN evidence and do not manufacture RED for integration.
 - **Delivery:** `stacked-to-main`, slice 3 after merged slice 2; historical source range `322f20f..03eb281`, forecast 262 authored lines plus this reconciliation. Keep total PR diff at or below 400 lines; no size exception granted.
 - **Hosting boundary:** GitHub Pages is the sole selected host and beta is already deployed. `vercel.json` is an unused configuration asset; it does NOT protect GitHub Pages or configure another host. Local Vercel-header tests prove only config-aware loopback behavior, not hosted Pages headers.
-- [ ] **INT-03A:** replay the existing REL-05/REL-06 commits with their code/tests and reconcile this tracker; preserve historical evidence and explicitly distinguish it from current validation.
-- [ ] **INT-03B:** run `npm test`, `npm run test:browser`, `npm run typecheck`, `npm run lint`, `npm run build`, `npm run test:vercel-headers`, and `git diff --check` in foreground; record outcomes before candidate publication.
+- [x] **INT-03A:** replayed `5e39131 a018363 eaa5048 c016865 6516181 03eb281` as `468ed57 c993e53 bb44fec 66e9491 848c6e5 f49e7f7`; original code/tests are unchanged. Tracker reconciliation supersedes historical hosting/publication notes while preserving dated audit evidence. Planning commit: `cea598b`. Rollback: remove this slice's Vercel asset, tests/harness, package script, and tracker evidence without changing merged upload/model-download behavior.
+- [x] **INT-03B:** foreground checks on 2026-10-04: `npm test` first failed the existing architecture test `src/domain/valid.ts follows its import boundary` at its 5-second timeout (34 files/367 tests passed); one unchanged serial rerun passed 35 files/368 tests. `npm run test:browser` passed 22 files/177 tests; `npm run typecheck`, `npm run lint`, `npm run build`, and `npm run test:vercel-headers` passed. Header harness observed five headers on its config-aware loopback server and two blocked CSP probes, not GitHub Pages. `git diff --check` passed. No shell files changed; shellcheck is N/A. No network audit was rerun; REL-05 remains historical evidence, not a current advisory guarantee. No dependencies were changed or installed. RDD disabled/unmanaged; no fabricated review approval.
 - **Engram mirror:** pending for `odd/first-public-release/tasks`; no authoritative registered session identity is available, so no agent-attributed memory write is permitted.
-- **Next step:** complete local integration and validation, then return the clean commit/head and measured diff to the parent. PR notes must repeat the Pages/Vercel limitation. No push, PR, merge, or release is performed by this worker.
+- **Next step:** local integration and validation are complete; return the clean commit/head and measured diff to the parent. PR notes must repeat the Pages/Vercel limitation. No push, PR, merge, or release is performed by this worker.
 
 ## Work Units
 
@@ -87,4 +88,4 @@ At final review, capture the commit, artifact hash, commands and results, suppor
 
 ## Next Step
 
-Proceed with REL-07 locally on `feat/first-public-release`; verify privacy/storage behavior and public notice without analytics, deployment, or external account access. REL-08/REL-10 remain owner decisions.
+Finish and verify slice 3 on `feat/first-release-slice-03-security-headers`, then return its exact candidate to the parent for the authorized issue #37 PR. Merge still requires separate authorization. Continue the existing `stacked-to-main` slice sequence afterward; the five-minute restriction is not removed by this slice. Preserve the existing longer-song work rather than replacing it with a literal gate deletion. Synchronize this full task document after each completed work unit; Engram mirror remains pending because runtime identity is unavailable.
