@@ -5,7 +5,7 @@ Date: 2026-09-20. Status: decided; toolchain confirmed by the user.
 ## Repository
 
 - Separate repository `stemslayer-web` (decided 2026-09-19): different stack, CI target and release cadence from the desktop app; no shared runtime code. The desktop repository (`../separador-pistas`) is the behavioural specification through `Tests/Portable/*` and the design of its views, never a code dependency.
-- Hosting: GitHub Pages from a GitHub Actions build. The repository never contains model weights (`weight-mirrors.md`).
+- Hosting: GitHub Pages is the sole intended production host (owner decision, 2026-09-29). GitHub Actions deploys only after a successful push to `main`; pull requests validate but do not deploy. The `github-pages` environment and Pages settings still require authorized remote verification; this repository decision does not establish that Pages is enabled or that environment protections are configured. The repository never contains model weights (`weight-mirrors.md`).
 
 ## Toolchain
 
