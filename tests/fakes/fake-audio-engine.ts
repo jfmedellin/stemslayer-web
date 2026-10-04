@@ -17,6 +17,8 @@ export class FakeAudioEngine implements AudioEnginePort {
     this.loadedSessions.push(session)
   }
 
+  cancelPendingReads(): void {}
+
   setLaneGain(): void {}
   setMasterGain(): void {}
   setLoopRange(): void {}
@@ -53,6 +55,7 @@ export class FakeAudioEnginePort implements AudioEnginePort {
   readonly seekCalls: number[] = []
   playCalls = 0
   pauseCalls = 0
+  cancelPendingReadsCalls = 0
   disposed = false
 
   private currentSample = 0
@@ -107,6 +110,17 @@ export class FakeAudioEnginePort implements AudioEnginePort {
 
   private emit(): void {
     const progress: MixerPlaybackProgress = { currentSample: this.currentSample, isPlaying: this.isPlaying }
+    this.reportProgress(progress)
+  }
+
+  cancelPendingReads(): void {
+    this.cancelPendingReadsCalls += 1
+    this.isPlaying = false
+  }
+
+  reportProgress(progress: MixerPlaybackProgress): void {
+    this.currentSample = progress.currentSample
+    this.isPlaying = progress.isPlaying
     for (const listener of this.listeners) listener(progress)
   }
 }

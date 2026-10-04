@@ -2,6 +2,7 @@ import { MAX_MIXER_LANES } from '../../domain/mixer/mixer'
 import {
   MIXER_PROCESSOR_NAME,
   PROGRESS_INTERVAL_SECONDS,
+  MIXER_PREFETCH_CHUNK_FRAMES,
   isMixerWorkletInboundMessage,
   laneGainParamName,
   type MixerWorkletOutboundMessage,
@@ -66,6 +67,12 @@ class MixerProcessor extends AudioWorkletProcessor {
   }
 
   private lanes: readonly LoadedLane[] = []
+  private readonly chunks = new Map<number, readonly (readonly [Float32Array, Float32Array])[]>()
+  private readonly requestedChunks = new Set<number>()
+  private streaming = false
+  private buffering = false
+  private rangeReadFailed = false
+  private failedChunkStart: number | undefined
   private frameCount = 0
   private cursor = 0
   private playing = false
@@ -84,6 +91,11 @@ class MixerProcessor extends AudioWorkletProcessor {
     if (!isMixerWorkletInboundMessage(data)) return
 
     if (data.kind === 'load') {
+      this.streaming = false
+      this.chunks.clear()
+      this.requestedChunks.clear()
+      this.rangeReadFailed = false
+      this.failedChunkStart = undefined
       this.lanes = data.lanes.map(({ channels }) => ({ channels }))
       this.frameCount = data.frameCount
       this.cursor = 0
@@ -91,7 +103,56 @@ class MixerProcessor extends AudioWorkletProcessor {
       this.loopRange = null
       return
     }
+    if (data.kind === 'stream-load') {
+      this.streaming = true
+      this.chunks.clear()
+      this.requestedChunks.clear()
+      this.lanes = data.lanes.map(() => ({ channels: [new Float32Array(0), new Float32Array(0)] }))
+      this.frameCount = data.frameCount
+      this.cursor = 0
+      this.playing = false
+      this.buffering = false
+      this.rangeReadFailed = false
+      this.failedChunkStart = undefined
+      this.loopRange = null
+      this.requestChunk(0)
+      return
+    }
+    if (data.kind === 'chunk') {
+      this.chunks.set(data.startFrame, data.lanes)
+      this.requestedChunks.delete(data.startFrame)
+      if (data.startFrame === this.failedChunkStart) this.failedChunkStart = undefined
+      this.buffering = false
+      this.postProgress()
+      return
+    }
+    if (data.kind === 'flush') {
+      this.chunks.clear()
+      this.requestedChunks.clear()
+      this.cursor = Math.min(this.frameCount, data.sample)
+      this.buffering = this.cursor < this.frameCount
+      this.requestChunk(this.cursor)
+      this.postProgress()
+      return
+    }
+    if (data.kind === 'chunk-failed') {
+      this.requestedChunks.delete(data.startFrame)
+      this.failedChunkStart = data.startFrame
+      this.rangeReadFailed = true
+      this.playing = false
+      this.buffering = false
+      this.postProgress()
+      return
+    }
     if (data.kind === 'play') {
+      if (this.rangeReadFailed) {
+        this.rangeReadFailed = false
+        this.playing = this.frameCount > 0
+        this.buffering = true
+        this.requestChunk(this.failedChunkStart ?? this.cursor)
+        this.postProgress()
+        return
+      }
       this.playing = this.frameCount > 0
       this.postProgress()
       return
@@ -107,6 +168,19 @@ class MixerProcessor extends AudioWorkletProcessor {
     }
     // data.kind === 'set-loop-range'
     this.loopRange = data.range
+  }
+
+  private requestChunk(sample: number): void {
+    const startFrame = Math.floor(sample / MIXER_PREFETCH_CHUNK_FRAMES) * MIXER_PREFETCH_CHUNK_FRAMES
+    if (startFrame >= this.frameCount || this.chunks.has(startFrame) || this.requestedChunks.has(startFrame)) return
+    for (const [loadedStart] of this.chunks) {
+      this.chunks.delete(loadedStart)
+      this.port.postMessage({ kind: 'release-chunk', startFrame: loadedStart })
+    }
+    this.requestedChunks.add(startFrame)
+    this.buffering = true
+    this.port.postMessage({ kind: 'need-chunk', startFrame })
+    this.postProgress()
   }
 
   /** Wraps at the loop region's end back to its start; with no loop range, stops at `frameCount`. */
@@ -129,6 +203,8 @@ class MixerProcessor extends AudioWorkletProcessor {
       kind: 'progress',
       currentSample: this.cursor,
       isPlaying: this.playing,
+      ...(this.streaming ? { isBuffering: this.buffering } : {}),
+      ...(this.rangeReadFailed ? { rangeError: 'range-read-failed' as const } : {}),
     }
     this.port.postMessage(message)
   }
@@ -148,19 +224,41 @@ class MixerProcessor extends AudioWorkletProcessor {
       let right = 0
       const canRender = this.playing && this.cursor < this.frameCount
       if (canRender) {
+        const chunkStart = Math.floor(this.cursor / MIXER_PREFETCH_CHUNK_FRAMES) * MIXER_PREFETCH_CHUNK_FRAMES
+        const chunk = this.streaming ? this.chunks.get(chunkStart) : undefined
+        if (this.streaming && chunk === undefined) {
+          this.requestChunk(this.cursor)
+          this.buffering = true
+          output[0][sampleIndex] = 0
+          output[1][sampleIndex] = 0
+          continue
+        }
+        this.buffering = false
         for (let laneIndex = 0; laneIndex < this.lanes.length; laneIndex += 1) {
           const lane = this.lanes[laneIndex]
           const gainParam = parameters[laneGainParamName(laneIndex)]
           const gain = gainParam.length > 1 ? gainParam[sampleIndex] : gainParam[0]
-          left += lane.channels[0][this.cursor] * gain
-          right += lane.channels[1][this.cursor] * gain
+          const channels = this.streaming ? chunk![laneIndex] : lane.channels
+          const frame = this.streaming ? this.cursor - chunkStart : this.cursor
+          left += channels[0][frame] * gain
+          right += channels[1][frame] * gain
         }
       }
       output[0][sampleIndex] = left
       output[1][sampleIndex] = right
 
       if (canRender) {
+        const previousChunk = Math.floor(this.cursor / MIXER_PREFETCH_CHUNK_FRAMES) * MIXER_PREFETCH_CHUNK_FRAMES
         this.advanceCursor()
+        const nextChunk = Math.floor(this.cursor / MIXER_PREFETCH_CHUNK_FRAMES) * MIXER_PREFETCH_CHUNK_FRAMES
+        const loopStartChunk = this.loopRange === null ? -1
+          : Math.floor(this.loopRange.startSample / MIXER_PREFETCH_CHUNK_FRAMES) * MIXER_PREFETCH_CHUNK_FRAMES
+        const loopEndChunk = this.loopRange === null ? -1
+          : Math.floor((this.loopRange.endSample - 1) / MIXER_PREFETCH_CHUNK_FRAMES) * MIXER_PREFETCH_CHUNK_FRAMES
+        if (this.streaming && previousChunk !== nextChunk
+          && previousChunk !== loopStartChunk && previousChunk !== loopEndChunk && this.chunks.delete(previousChunk)) {
+          this.port.postMessage({ kind: 'release-chunk', startFrame: previousChunk })
+        }
         this.samplesSinceProgress += 1
         if (this.samplesSinceProgress >= this.progressIntervalSamples) {
           this.samplesSinceProgress = 0

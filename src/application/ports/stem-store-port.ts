@@ -4,6 +4,16 @@
  * `docs/decisions/browser-storage.md` section 2).
  */
 export interface StemStorePort {
+  /** Reads validated metadata from a REL-03A float32 stereo WAV without loading its payload. */
+  readLaneInfo?(resultKey: string, laneId: string): Promise<StemLaneInfo>
+  /** Reads a bounded frame-aligned range as planar stereo PCM. */
+  readLaneFrames?(
+    resultKey: string,
+    laneId: string,
+    startFrame: number,
+    frameCount: number,
+    signal?: AbortSignal,
+  ): Promise<readonly [Float32Array, Float32Array]>
   /** Opens a bounded incremental float32 WAV write; chunks must arrive in frame order. */
   beginLaneWrite(
     resultKey: string,
@@ -21,6 +31,11 @@ export interface StemStorePort {
   exists(resultKey: string): Promise<boolean>
   /** Every key currently stored, for the startup orphan sweep. */
   listResultKeys(): Promise<readonly string[]>
+}
+
+export interface StemLaneInfo {
+  readonly sampleRate: number
+  readonly frameCount: number
 }
 
 export interface StemLaneWriteSession {

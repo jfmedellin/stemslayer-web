@@ -1,4 +1,4 @@
-import type { StemStorePort } from '../../src/application/ports/stem-store-port'
+import type { StemLaneInfo, StemStorePort } from '../../src/application/ports/stem-store-port'
 import { encodeFloat32Wav } from '../../src/domain/audio/float32-wav'
 
 function laneKey(resultKey: string, laneId: string): string {
@@ -53,6 +53,31 @@ export class InMemoryStemStore implements StemStorePort {
       throw new Error(`stem-store.lane_not_found:${laneKey(resultKey, laneId)}`)
     }
     return audio
+  }
+
+  async readLaneInfo(resultKey: string, laneId: string): Promise<StemLaneInfo> {
+    const bytes = await this.readLane(resultKey, laneId)
+    const view = new DataView(bytes.buffer, bytes.byteOffset, bytes.byteLength)
+    return { sampleRate: view.getUint32(24, true), frameCount: view.getUint32(40, true) / 8 }
+  }
+
+  async readLaneFrames(
+    resultKey: string,
+    laneId: string,
+    startFrame: number,
+    frameCount: number,
+  ): Promise<readonly [Float32Array, Float32Array]> {
+    const bytes = await this.readLane(resultKey, laneId)
+    const endFrame = startFrame + frameCount
+    const payload = bytes.subarray(44 + startFrame * 8, 44 + endFrame * 8)
+    const view = new DataView(payload.buffer, payload.byteOffset, payload.byteLength)
+    const left = new Float32Array(frameCount)
+    const right = new Float32Array(frameCount)
+    for (let frame = 0; frame < frameCount; frame += 1) {
+      left[frame] = view.getFloat32(frame * 8, true)
+      right[frame] = view.getFloat32(frame * 8 + 4, true)
+    }
+    return [left, right]
   }
 
   async delete(resultKey: string): Promise<void> {

@@ -5,7 +5,6 @@ import { resolveStemProfile } from '../../application/resolve-stem-profile'
 import type { Track } from '../../domain/track'
 import {
   MixerLoadGeneration,
-  computePeakEnvelope,
   createLoopRange,
   masterGainFromPercent,
   nudgeSample,
@@ -76,6 +75,7 @@ export function MixerPage({ deps, trackId, onBackToLibrary, onExport }: MixerPag
   // tearing down here between tracks.
   useEffect(() => {
     const token = generationRef.current.next()
+    const controller = new AbortController()
     setSession(null)
     setProgress({ currentSample: 0, isPlaying: false })
     setLoopRangeState(null)
@@ -86,7 +86,7 @@ export function MixerPage({ deps, trackId, onBackToLibrary, onExport }: MixerPag
     const isStale = (): boolean => generationRef.current.isStale(token)
     void Promise.all([
       depsRef.current.catalog.getById(trackId),
-      openInMixer(trackId, depsRef.current, { isStale }),
+      openInMixer(trackId, depsRef.current, { isStale, signal: controller.signal }),
     ])
       .then(([loadedTrack, result]) => {
         if (isStale()) return
@@ -95,9 +95,14 @@ export function MixerPage({ deps, trackId, onBackToLibrary, onExport }: MixerPag
         setLoadOk(result.ok)
         setLaneStates(initialLaneStates(result.session))
         setPeaksByLaneId(Object.fromEntries(
-          result.session.lanes.map((lane) => [lane.laneId, computePeakEnvelope(lane.channels)]),
+          result.session.lanes.map((lane) => [lane.laneId, lane.peaks ?? new Float32Array(0)]),
         ))
       })
+    return () => {
+      controller.abort()
+      generationRef.current.next()
+      depsRef.current.audioEngine.cancelPendingReads()
+    }
   }, [trackId])
 
   useEffect(() => {
@@ -286,6 +291,14 @@ export function MixerPage({ deps, trackId, onBackToLibrary, onExport }: MixerPag
       {session !== null && !loadOk && (
         <p className="mixer-load-error" role="alert">
           Could not load this track&apos;s stems — showing a silent fallback layout.
+        </p>
+      )}
+
+      {progress.isBuffering === true && <p className="mixer-buffering" role="status">Buffering audio…</p>}
+
+      {progress.rangeError === 'range-read-failed' && (
+        <p className="mixer-load-error mixer-range-error" role="alert">
+          Audio data could not be read. Press Play to retry.
         </p>
       )}
 

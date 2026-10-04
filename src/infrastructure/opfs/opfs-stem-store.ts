@@ -1,4 +1,5 @@
-import type { StemLaneWriteSession, StemStorePort } from '../../application/ports/stem-store-port'
+import type { StemLaneInfo, StemLaneWriteSession, StemStorePort } from '../../application/ports/stem-store-port'
+import { MIXER_FRAME_CHUNK_SIZE } from '../../domain/mixer/mixer'
 
 const DEFAULT_ROOT_DIRECTORY_NAME = 'stems'
 const WAV_EXTENSION = '.wav'
@@ -273,6 +274,89 @@ export class OpfsStemStore implements StemStorePort {
       }
       throw error
     }
+  }
+
+  private async laneFile(resultKey: string, laneId: string): Promise<File> {
+    const root = await this.root()
+    const directory = await getDirectory(root, splitKey(resultKey), false)
+    if (directory === undefined) throw new Error(`opfs-stem-store.lane_not_found:${resultKey}/${laneId}`)
+    try {
+      return await (await directory.getFileHandle(`${laneId}${WAV_EXTENSION}`)).getFile()
+    } catch (error) {
+      if (error instanceof DOMException && error.name === 'NotFoundError') {
+        throw new Error(`opfs-stem-store.lane_not_found:${resultKey}/${laneId}`, { cause: error })
+      }
+      throw error
+    }
+  }
+
+  async readLaneInfo(resultKey: string, laneId: string): Promise<StemLaneInfo> {
+    const file = await this.laneFile(resultKey, laneId)
+    if (file.size < 44) throw new Error('opfs-stem-store.invalid_wav_header')
+    const bytes = new Uint8Array(await file.slice(0, 44).arrayBuffer())
+    const view = new DataView(bytes.buffer, bytes.byteOffset, bytes.byteLength)
+    const ascii = (offset: number, value: string): boolean =>
+      value.split('').every((character, index) => bytes[offset + index] === character.charCodeAt(0))
+    const sampleRate = view.getUint32(24, true)
+    const dataBytes = view.getUint32(40, true)
+    const frameCount = dataBytes / 8
+    if (
+      !ascii(0, 'RIFF') || !ascii(8, 'WAVE') || !ascii(12, 'fmt ') || !ascii(36, 'data')
+      || view.getUint32(4, true) !== file.size - 8
+      || view.getUint32(16, true) !== 16
+      || view.getUint16(20, true) !== 3
+      || view.getUint16(22, true) !== 2
+      || sampleRate <= 0
+      || view.getUint32(28, true) !== sampleRate * 8
+      || view.getUint16(32, true) !== 8
+      || view.getUint16(34, true) !== 32
+      || dataBytes !== file.size - 44
+      || dataBytes % 8 !== 0
+      || !Number.isSafeInteger(frameCount)
+    ) throw new Error('opfs-stem-store.invalid_wav_header')
+    return Object.freeze({ sampleRate, frameCount })
+  }
+
+  async readLaneFrames(
+    resultKey: string,
+    laneId: string,
+    startFrame: number,
+    frameCount: number,
+    signal?: AbortSignal,
+  ): Promise<readonly [Float32Array, Float32Array]> {
+    const info = await this.readLaneInfo(resultKey, laneId)
+    if (!Number.isSafeInteger(startFrame) || !Number.isSafeInteger(frameCount)
+      || startFrame < 0 || frameCount <= 0 || frameCount > MIXER_FRAME_CHUNK_SIZE
+      || startFrame + frameCount > info.frameCount) {
+      throw new Error('opfs-stem-store.invalid_frame_range')
+    }
+    if (signal?.aborted) throw new DOMException('The operation was aborted.', 'AbortError')
+    const file = await this.laneFile(resultKey, laneId)
+    const reader = file.slice(44 + startFrame * 8, 44 + (startFrame + frameCount) * 8).stream().getReader()
+    const bytes = new Uint8Array(frameCount * 8)
+    let offset = 0
+    const abort = (): void => { void reader.cancel(signal?.reason) }
+    signal?.addEventListener('abort', abort, { once: true })
+    try {
+      while (offset < bytes.length) {
+        if (signal?.aborted) throw new DOMException('The operation was aborted.', 'AbortError')
+        const result = await reader.read()
+        if (result.done || result.value === undefined) throw new Error('opfs-stem-store.truncated_frame_range')
+        bytes.set(result.value, offset)
+        offset += result.value.length
+      }
+    } finally {
+      signal?.removeEventListener('abort', abort)
+      reader.releaseLock()
+    }
+    const view = new DataView(bytes.buffer)
+    const left = new Float32Array(frameCount)
+    const right = new Float32Array(frameCount)
+    for (let frame = 0; frame < frameCount; frame += 1) {
+      left[frame] = view.getFloat32(frame * 8, true)
+      right[frame] = view.getFloat32(frame * 8 + 4, true)
+    }
+    return [left, right]
   }
 
   async delete(key: string): Promise<void> {
