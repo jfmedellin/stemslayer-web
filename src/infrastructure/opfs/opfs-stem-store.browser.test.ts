@@ -29,6 +29,65 @@ test('writeLane then readLane round trips the exact bytes', async () => {
   await expect(store.readLane('stems/track-1', 'vocals')).resolves.toEqual(audio)
 })
 
+test('streams a lane and removes the staged ZIP after the download snapshot is released', async () => {
+  const store = newStore()
+  const original = Uint8Array.from({ length: 120_000 }, (_unused, index) => index % 251)
+  await store.writeLane('stems/export', 'vocals', original)
+  const file = await store.readLaneFile('stems/export', 'vocals')
+  expect(file.size).toBe(original.length)
+  const received: number[] = []
+  const reader = (await store.openLaneStream('stems/export', 'vocals')).getReader()
+  while (true) {
+    const result = await reader.read()
+    if (result.done) break
+    received.push(result.value.length)
+  }
+  expect(received.length).toBeGreaterThan(1)
+  expect(Math.max(...received)).toBeLessThanOrEqual(65_536)
+
+  const opfsRoot = await navigator.storage.getDirectory()
+  const exports = await (await opfsRoot.getDirectoryHandle(rootDirectoryName)).getDirectoryHandle('.exports', { create: true })
+  const archive = await store.createExportArchive()
+  await archive.write(Uint8Array.from([1, 2, 3]))
+  await archive.write(Uint8Array.from([4, 5]))
+  const snapshot = await archive.complete()
+  expect(new Uint8Array(await snapshot.arrayBuffer())).toEqual(Uint8Array.from([1, 2, 3, 4, 5]))
+  const remaining: string[] = []
+  for await (const [name] of exports.entries()) remaining.push(name)
+  expect(remaining).toHaveLength(1)
+  await archive.release()
+  const afterRelease: string[] = []
+  for await (const [name] of exports.entries()) afterRelease.push(name)
+  expect(afterRelease).toEqual([])
+  await expect(store.readLane('stems/export', 'vocals')).resolves.toEqual(original)
+})
+
+test('removes temporary archive files on abort and staging creation failure without touching source stems', async () => {
+  let failNextExport = false
+  const store = newStore({
+    createWritable: async (handle) => {
+      if (failNextExport && handle.name.startsWith('export-')) throw new Error('temporary storage unavailable')
+      return handle.createWritable()
+    },
+  })
+  const source = Uint8Array.from([82, 73, 70, 70, 1, 2, 3, 4])
+  await store.writeLane('stems/keep', 'vocals', source)
+
+  const staging = await store.createExportArchive()
+  await staging.write(Uint8Array.from([1, 2]))
+  await staging.abort()
+  await expect(staging.write(Uint8Array.from([3]))).rejects.toThrow('export_not_open')
+  failNextExport = true
+  await expect(store.createExportArchive()).rejects.toThrow('temporary storage unavailable')
+  await expect(store.readLane('stems/keep', 'vocals')).resolves.toEqual(source)
+
+  const opfsRoot = await navigator.storage.getDirectory()
+  const exports = await (await opfsRoot.getDirectoryHandle(rootDirectoryName)).getDirectoryHandle('.exports', { create: true })
+  const remaining: string[] = []
+  for await (const [name] of exports.entries()) remaining.push(name)
+  expect(remaining).toEqual([])
+})
+
 test('incremental lane writer emits byte-identical WAV and finalizes only after all frames arrive', async () => {
   const store = newStore()
   const left = Float32Array.from([0.1, -0.2, 0.3, -0.4])

@@ -55,6 +55,36 @@ export class InMemoryStemStore implements StemStorePort {
     return audio
   }
 
+  async readLaneFile(resultKey: string, laneId: string): Promise<File> {
+    const bytes = this.lanes.get(laneKey(resultKey, laneId))
+    if (bytes === undefined) throw new Error(`stem-store.lane_not_found:${laneKey(resultKey, laneId)}`)
+    return new File([bytes.slice().buffer as ArrayBuffer], `${laneId}.wav`)
+  }
+
+  async openLaneStream(resultKey: string, laneId: string): Promise<ReadableStream<Uint8Array>> {
+    return (await this.readLaneFile(resultKey, laneId)).stream()
+  }
+
+  async createExportArchive() {
+    const chunks: Uint8Array[] = []
+    let closed = false
+    const remove = (): void => { chunks.length = 0; closed = true }
+    return {
+      write: async (chunk: Uint8Array): Promise<void> => {
+        if (closed) throw new Error('fake-stem-store.export_not_open')
+        chunks.push(chunk.slice())
+      },
+      complete: async (): Promise<File> => {
+        if (closed) throw new Error('fake-stem-store.export_not_open')
+        const file = new File(chunks.map((chunk) => chunk.slice().buffer as ArrayBuffer), 'stems.zip')
+        remove()
+        return file
+      },
+      abort: async (): Promise<void> => { remove() },
+      release: async (): Promise<void> => { remove() },
+    }
+  }
+
   async readLaneInfo(resultKey: string, laneId: string): Promise<StemLaneInfo> {
     const bytes = await this.readLane(resultKey, laneId)
     const view = new DataView(bytes.buffer, bytes.byteOffset, bytes.byteLength)

@@ -1,6 +1,6 @@
 import { describe, expect, test } from 'vitest'
 
-import { crc32, writeZip } from '../../src/domain/zip/zip-writer'
+import { crc32, writeZip, writeZipStream } from '../../src/domain/zip/zip-writer'
 import { independentCrc32, readZip } from '../support/independent-zip-reader'
 
 describe('crc32', () => {
@@ -45,5 +45,51 @@ describe('writeZip', () => {
     expect(read).toHaveLength(1)
     expect(read[0].bytes).toHaveLength(0)
     expect(read[0].crc).toBe(0)
+  })
+})
+
+describe('writeZipStream', () => {
+  test('writes valid byte-identical entries incrementally without retaining the archive', async () => {
+    const first = Uint8Array.from({ length: 100_003 }, (_unused, index) => index % 251)
+    const second = Uint8Array.from({ length: 70_019 }, (_unused, index) => (index * 7) % 253)
+    const chunks: Uint8Array[] = []
+    let largestWrite = 0
+    const source = (bytes: Uint8Array): (() => ReadableStream<Uint8Array>) => () => new ReadableStream({
+      start(controller) {
+        for (let offset = 0; offset < bytes.length; offset += 4096) {
+          controller.enqueue(bytes.subarray(offset, Math.min(bytes.length, offset + 4096)))
+        }
+        controller.close()
+      },
+    })
+
+    await writeZipStream([
+      { fileName: 'first.wav', size: first.length, openStream: source(first) },
+      { fileName: 'second-é.wav', size: second.length, openStream: source(second) },
+    ], {
+      write(chunk) {
+        largestWrite = Math.max(largestWrite, chunk.length)
+        chunks.push(chunk.slice())
+      },
+    })
+
+    const archive = new Uint8Array(chunks.reduce((size, chunk) => size + chunk.length, 0))
+    let offset = 0
+    for (const chunk of chunks) { archive.set(chunk, offset); offset += chunk.length }
+    const entries = readZip(archive)
+    expect(entries.map((entry) => entry.fileName)).toEqual(['first.wav', 'second-é.wav'])
+    expect(entries[0].bytes).toEqual(first)
+    expect(entries[1].bytes).toEqual(second)
+    expect(largestWrite).toBeLessThanOrEqual(4096)
+  })
+
+  test('rejects ZIP32 entries above the representable size before reading their streams', async () => {
+    let opened = false
+    await expect(writeZipStream([{
+      fileName: 'too-large.wav',
+      size: 0x1_0000_0000,
+      openStream: () => { opened = true; return new ReadableStream() },
+    }], { write: () => undefined })).rejects.toThrow('zip-writer.size_limit')
+    expect(opened).toBe(false)
   })
 })

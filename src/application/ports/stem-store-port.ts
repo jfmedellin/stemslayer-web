@@ -25,12 +25,25 @@ export interface StemStorePort {
   writeLane(resultKey: string, laneId: string, audio: Uint8Array): Promise<void>
   /** Reads back one lane's stored bytes, byte-identical to what was written. Rejects if the lane was never written. */
   readLane(resultKey: string, laneId: string): Promise<Uint8Array>
+  /** Opens a read-only file snapshot for a download without materializing its bytes in JavaScript memory. */
+  readLaneFile?(resultKey: string, laneId: string): Promise<File>
+  /** Opens a fresh bounded byte stream for a WAV file. Each call must be independently readable. */
+  openLaneStream?(resultKey: string, laneId: string): Promise<ReadableStream<Uint8Array>>
+  /** Creates a temporary OPFS archive writer whose completion returns a file snapshot and removes the staging entry. */
+  createExportArchive?(): Promise<ExportArchiveSession>
   /** Deletes one stored key (a whole result key, or one lane key within it); deleting an unknown key is a no-op. */
   delete(resultKey: string): Promise<void>
   /** Whether a given key is currently stored (startup validation sweep). */
   exists(resultKey: string): Promise<boolean>
   /** Every key currently stored, for the startup orphan sweep. */
   listResultKeys(): Promise<readonly string[]>
+}
+
+export interface ExportArchiveSession {
+  write(chunk: Uint8Array): Promise<void>
+  complete(): Promise<File>
+  abort(): Promise<void>
+  release(): Promise<void>
 }
 
 export interface StemLaneInfo {
