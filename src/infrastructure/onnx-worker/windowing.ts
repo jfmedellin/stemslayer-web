@@ -174,3 +174,154 @@ export async function processPlanarWindowsStreaming(
     onProgress?.({ window: windowIndex + 1, totalWindows: offsets.length })
   }
 }
+export interface StreamedWindowResult {
+  readonly frameCount: number
+  readonly windowCount: number
+  readonly maxRetainedInputFrames: number
+}
+
+/** Processes decoded PCM as it arrives, retaining only the active source overlap. */
+export async function processPlanarWindowStream(
+  input: AsyncIterable<readonly [Float32Array, Float32Array]>,
+  processWindow: PlanarWindowProcessor,
+  onChunk: (chunk: FinalizedWindowChunk) => void | Promise<void>,
+  options: Readonly<{
+    readonly signal?: AbortSignal
+    readonly onProgress?: (window: number) => void
+    readonly onBufferCapacity?: (samplesPerChannel: number) => void
+  }> = {},
+): Promise<StreamedWindowResult> {
+  interface InputChunk {
+    readonly start: number
+    readonly channels: readonly [Float32Array, Float32Array]
+  }
+  const chunks: InputChunk[] = []
+  const weight = createTriangularWeight()
+  const accumulatedWeight = new Float64Array(MODEL_SEGMENT_SAMPLES)
+  let accumulatedChannels: Float64Array[] | undefined
+  let frameCount = 0
+  let retainedStart = 0
+  let maxRetainedInputFrames = 0
+  let windowOffset = 0
+  let outputBase = 0
+  let windowCount = 0
+  let done = false
+  const iterator = input[Symbol.asyncIterator]()
+
+  const checkCancelled = (): void => {
+    if (options.signal?.aborted) throw new DOMException('The operation was aborted.', 'AbortError')
+  }
+  const readUntil = async (neededFrame: number): Promise<void> => {
+    while (!done && frameCount < neededFrame) {
+      checkCancelled()
+      const next = await iterator.next()
+      if (next.done) {
+        done = true
+        break
+      }
+      const [left, right] = next.value
+      if (!(left instanceof Float32Array) || !(right instanceof Float32Array) || left.length !== right.length) {
+        throw new Error('windowing.invalid_stream_chunk')
+      }
+      if (left.length === 0) continue
+      if (!Number.isSafeInteger(frameCount + left.length)) throw new Error('windowing.stream_too_long')
+      chunks.push({ start: frameCount, channels: [left, right] })
+      frameCount += left.length
+      const retainedFrames = frameCount - retainedStart
+      maxRetainedInputFrames = Math.max(maxRetainedInputFrames, retainedFrames)
+      options.onBufferCapacity?.(retainedFrames)
+    }
+  }
+  const makeWindow = (naturalLength: number): readonly Float32Array[] => {
+    const trimStart = Math.floor((MODEL_SEGMENT_SAMPLES - naturalLength) / 2)
+    const sourceStart = windowOffset - trimStart
+    const sourceEnd = sourceStart + MODEL_SEGMENT_SAMPLES
+    const result: [Float32Array, Float32Array] = [
+      new Float32Array(MODEL_SEGMENT_SAMPLES),
+      new Float32Array(MODEL_SEGMENT_SAMPLES),
+    ]
+    for (const chunk of chunks) {
+      const chunkEnd = chunk.start + chunk.channels[0].length
+      const copyStart = Math.max(sourceStart, chunk.start, 0)
+      const copyEnd = Math.min(sourceEnd, chunkEnd, frameCount)
+      if (copyEnd <= copyStart) continue
+      const sourceOffset = copyStart - chunk.start
+      const targetOffset = copyStart - sourceStart
+      result[0].set(chunk.channels[0].subarray(sourceOffset, sourceOffset + copyEnd - copyStart), targetOffset)
+      result[1].set(chunk.channels[1].subarray(sourceOffset, sourceOffset + copyEnd - copyStart), targetOffset)
+    }
+    return result
+  }
+  const discardBefore = (frame: number): void => {
+    while (chunks.length > 0) {
+      const first = chunks[0]
+      const end = first.start + first.channels[0].length
+      if (end <= frame) {
+        chunks.shift()
+        continue
+      }
+      if (first.start < frame) {
+        const trim = frame - first.start
+        chunks[0] = { start: frame, channels: [first.channels[0].subarray(trim), first.channels[1].subarray(trim)] }
+      }
+      break
+    }
+    retainedStart = frame
+  }
+
+  try {
+    while (true) {
+      checkCancelled()
+      await readUntil(windowOffset + MODEL_SEGMENT_SAMPLES)
+      if (frameCount === 0 || windowOffset >= frameCount) break
+      const naturalLength = done ? Math.min(MODEL_SEGMENT_SAMPLES, frameCount - windowOffset) : MODEL_SEGMENT_SAMPLES
+      const trimStart = Math.floor((MODEL_SEGMENT_SAMPLES - naturalLength) / 2)
+      const output = await processWindow(makeWindow(naturalLength))
+      const outputChannelCount = validateOutput(output, accumulatedChannels?.length)
+      accumulatedChannels ??= Array.from({ length: outputChannelCount }, () => new Float64Array(MODEL_SEGMENT_SAMPLES))
+
+      for (let sample = 0; sample < naturalLength; sample += 1) {
+        const local = windowOffset + sample - outputBase
+        const modelCoordinate = trimStart + sample
+        const segmentWeight = weight[modelCoordinate]
+        accumulatedWeight[local] += segmentWeight
+        for (let channel = 0; channel < outputChannelCount; channel += 1) {
+          accumulatedChannels[channel][local] += output[channel][modelCoordinate] * segmentWeight
+        }
+      }
+
+      const nextOffset = windowOffset + MODEL_WINDOW_STRIDE
+      const flushLength = done || nextOffset >= frameCount ? frameCount - outputBase : nextOffset - outputBase
+      for (let start = 0; start < flushLength; start += MODEL_WINDOW_STRIDE) {
+        const length = Math.min(MODEL_WINDOW_STRIDE, flushLength - start)
+        const finalized = Object.freeze(accumulatedChannels.map((channel) => {
+          const chunk = new Float32Array(length)
+          for (let sample = 0; sample < length; sample += 1) {
+            const index = start + sample
+            chunk[sample] = channel[index] / accumulatedWeight[index]
+          }
+          return chunk
+        }))
+        await onChunk({ offset: outputBase + start, channels: finalized })
+      }
+      const remaining = MODEL_SEGMENT_SAMPLES - flushLength
+      for (const channel of accumulatedChannels) {
+        channel.copyWithin(0, flushLength, flushLength + remaining)
+        channel.fill(0, remaining)
+      }
+      accumulatedWeight.copyWithin(0, flushLength, flushLength + remaining)
+      accumulatedWeight.fill(0, remaining)
+      outputBase += flushLength
+      windowCount += 1
+      options.onProgress?.(windowCount)
+      windowOffset = nextOffset
+      discardBefore(windowOffset)
+      options.onBufferCapacity?.(frameCount - retainedStart)
+    }
+  } finally {
+    if (!done) await iterator.return?.()
+  }
+
+  if (windowCount === 0) throw new Error('windowing.invalid_input_shape Stream contained no audio frames.')
+  return Object.freeze({ frameCount, windowCount, maxRetainedInputFrames })
+}

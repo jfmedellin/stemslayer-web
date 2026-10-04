@@ -5,6 +5,7 @@ import {
   MODEL_WINDOW_STRIDE,
   createTriangularWeight,
   createWindowOffsets,
+  processPlanarWindowStream,
   processPlanarWindows,
   processPlanarWindowsStreaming,
 } from '../../../src/infrastructure/onnx-worker/windowing'
@@ -263,5 +264,73 @@ describe('processPlanarWindows', () => {
         return calls === 1 ? [window[0].slice(), window[0].slice()] : [window[0].slice()]
       }),
     ).rejects.toThrow('windowing.invalid_output_shape')
+  })
+
+  test('streams arbitrary-sized chunks through ordered windows with bounded input retention and exact tail length', async () => {
+    const frameCount = MODEL_WINDOW_STRIDE + 123_456
+    const chunkSize = 10_003
+    const source: readonly [Float32Array, Float32Array] = [signal(frameCount), signal(frameCount, 12)]
+    const output = [new Float32Array(frameCount), new Float32Array(frameCount)]
+    const outputOffsets: number[] = []
+    const progress: number[] = []
+    const result = await processPlanarWindowStream((async function* () {
+      for (let offset = 0; offset < frameCount; offset += chunkSize) {
+        const end = Math.min(offset + chunkSize, frameCount)
+        yield [source[0].subarray(offset, end), source[1].subarray(offset, end)] as const
+      }
+    })(), (window) => window, ({ offset, channels }) => {
+      outputOffsets.push(offset)
+      channels.forEach((channel, index) => output[index].set(channel, offset))
+    }, { onProgress: (window) => progress.push(window) })
+
+    expect(outputOffsets).toEqual([0, MODEL_WINDOW_STRIDE])
+    expect(progress).toEqual([1, 2])
+    expect(result).toMatchObject({ frameCount, windowCount: 2 })
+    expect(result.maxRetainedInputFrames).toBeLessThanOrEqual(MODEL_SEGMENT_SAMPLES + chunkSize)
+    expect(output[0]).toHaveLength(frameCount)
+    expect(output[1]).toHaveLength(frameCount)
+    expect(maxError(output[0], source[0])).toBeLessThanOrEqual(1e-6)
+    expect(maxError(output[1], source[1])).toBeLessThanOrEqual(1e-6)
+  })
+
+  test('matches the finite streamed-window path for transformed output and final overlap', async () => {
+    const frameCount = MODEL_WINDOW_STRIDE + 1_237
+    const source = [signal(frameCount), signal(frameCount, 9)]
+    const transform = async (window: readonly Float32Array[]) => window.map((channel) => {
+      const output = new Float32Array(channel.length)
+      for (let i = 0; i < channel.length; i += 1) output[i] = channel[i] * 0.73
+      return output
+    })
+    const expected = [new Float32Array(frameCount), new Float32Array(frameCount)]
+    await processPlanarWindowsStreaming(source, transform, ({ offset, channels }) => {
+      channels.forEach((channel, index) => expected[index].set(channel, offset))
+    })
+    const actual = [new Float32Array(frameCount), new Float32Array(frameCount)]
+    async function* chunks(): AsyncIterable<readonly [Float32Array, Float32Array]> {
+      for (let offset = 0; offset < frameCount; offset += 2_048) {
+        const end = Math.min(frameCount, offset + 2_048)
+        yield [source[0].slice(offset, end), source[1].slice(offset, end)]
+      }
+    }
+    await processPlanarWindowStream(chunks(), transform, ({ offset, channels }) => {
+      channels.forEach((channel, index) => actual[index].set(channel, offset))
+    })
+    expect(maxError(actual[0], expected[0])).toBeLessThanOrEqual(1e-6)
+    expect(maxError(actual[1], expected[1])).toBeLessThanOrEqual(1e-6)
+  })
+
+  test('splits a short final overlap result into protocol-sized chunks', async () => {
+    const frameCount = MODEL_WINDOW_STRIDE + 32
+    const source = [signal(frameCount), signal(frameCount, 5)]
+    const emitted: Array<{ offset: number; length: number }> = []
+    async function* chunks(): AsyncIterable<readonly [Float32Array, Float32Array]> {
+      yield [source[0], source[1]]
+    }
+    const result = await processPlanarWindowStream(chunks(), (window) => window, ({ offset, channels }) => {
+      emitted.push({ offset, length: channels[0].length })
+    })
+    expect(emitted).toEqual([{ offset: 0, length: MODEL_WINDOW_STRIDE }, { offset: MODEL_WINDOW_STRIDE, length: 32 }])
+    expect(emitted.every(({ length }) => length <= MODEL_WINDOW_STRIDE)).toBe(true)
+    expect(result.frameCount).toBe(frameCount)
   })
 })
