@@ -21,13 +21,10 @@ interface StemRow extends ExportTrackEntry {
   readonly sampleRateHz: number
 }
 
-// Verbatim, fetched from the real Export Stitch mockup — the exact sentence
-// `phase-2-plan.md`'s own P10 row calls for ("Safari seven-day notice") and
-// `architecture.md`/`browser-storage.md` section 4 already establish as
-// fact (WebKit ITP 7-day full-storage deletion).
 const STORAGE_NOTICE =
-  'These stems live only in this browser. Safari deletes site data after 7 days without a visit; ' +
-  'other browsers may evict it under disk pressure. Download what you want to keep.'
+  'Track details and saved stems stay in this site’s browser storage. Anyone using this browser profile on this site can access saved tracks. ' +
+  'Storage may be cleared or evicted; Safari may delete site data after 7 days without a visit. Other browsers and site origins have separate storage. ' +
+  'Download what you want to keep.'
 
 function triggerDownload(bytes: Uint8Array, fileName: string): void {
   const blob = new Blob([bytes.slice()], { type: 'application/octet-stream' })

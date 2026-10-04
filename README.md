@@ -19,9 +19,13 @@ public deployment or release is claimed here.
    as individual 32-bit float WAV files or a ZIP. Export downloads the stored
    stems; it does not render your current mixer settings.
 
-The audio file is processed in your browser, not uploaded to an application
-server. Model weights are downloaded from pinned third-party mirrors and
-verified before use. Results and catalog data stay in this browser's storage.
+Processing happens in this browser. Source audio is held temporarily for
+processing and is not saved to the library. Track details and saved stems are
+held in this site's browser storage; nothing in this flow is uploaded to
+Stemslayer. Model weights are downloaded from pinned Hugging Face mirrors and
+their CDN, then verified before use. Browser storage is scoped to this site and
+browser profile: anyone using that profile on this site can access saved tracks,
+while another browser, device, or site origin has separate storage.
 
 ## Develop and check
 
@@ -50,10 +54,10 @@ npm run build
   preferred when available, with a WASM fallback that may be slower.
 - The model download and stored stems require substantial browser storage.
   Separation may be refused when available quota is insufficient.
-- Browser storage is not a backup. Other browsers may evict data under disk
-  pressure; Safari can delete site data after seven days without a visit.
-  Download stems you want to keep. Retrying a failed or interrupted track may
-  require selecting the original file again.
+- Browser storage is not a backup. It may be cleared manually or evicted; Safari
+  may delete site data after seven days without a visit. Download stems you want
+  to keep. Retrying a failed or interrupted track may require selecting the
+  original file again.
 
 ## Model licensing
 

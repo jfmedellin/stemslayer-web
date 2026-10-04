@@ -1,6 +1,7 @@
 import { playwright } from '@vitest/browser-playwright'
 import react from '@vitejs/plugin-react'
 import { defineConfig } from 'vitest/config'
+import { startPrivacyNetworkCapture, stopPrivacyNetworkCapture } from './tests/support/privacy-network-capture.ts'
 
 export default defineConfig({
   test: {
@@ -21,6 +22,10 @@ export default defineConfig({
             enabled: true,
             provider: playwright(),
             instances: [{ browser: 'chromium' }],
+            commands: {
+              startPrivacyNetworkCapture,
+              stopPrivacyNetworkCapture,
+            },
           },
         },
       },
