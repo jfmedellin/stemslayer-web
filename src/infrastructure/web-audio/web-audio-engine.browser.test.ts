@@ -44,8 +44,12 @@ async function flushMicrotasks(): Promise<void> {
 }
 
 /** Waits for cross-thread AudioWorklet messages without assuming they beat a suspend event. */
-async function waitForCondition(condition: () => boolean, description: string): Promise<void> {
-  const deadline = Date.now() + 2_000
+async function waitForCondition(
+  condition: () => boolean,
+  description: string,
+  timeoutMs = 2_000,
+): Promise<void> {
+  const deadline = Date.now() + timeoutMs
   while (!condition()) {
     if (Date.now() >= deadline) throw new Error(`Timed out waiting for ${description}`)
     await new Promise((resolve) => setTimeout(resolve, 1))
@@ -249,13 +253,21 @@ describe('WebAudioEngine against a real AudioWorkletProcessor (OfflineAudioConte
     boundaryEngine.dispose()
   })
 
-  test('keeps multi-chunk loop ranges prefetched across repeated wraps', async () => {
+  test('keeps multi-chunk loop ranges prefetched through a loop wrap', async () => {
     const frameCount = MIXER_PREFETCH_CHUNK_FRAMES * (MIXER_PREFETCH_SLOT_COUNT + 1)
     const frameReads: number[] = []
     const context = new OfflineAudioContext(2, frameCount + MIXER_PREFETCH_CHUNK_FRAMES, SAMPLE_RATE)
     const streamingEngine = new WebAudioEngine({ context })
     const progress: Array<{ currentSample: number; isPlaying: boolean; isBuffering?: boolean }> = []
-    streamingEngine.onProgress((next) => progress.push(next))
+    let previousSample = 0
+    let loopWrapped = false
+    streamingEngine.onProgress((next) => {
+      if (next.currentSample < previousSample && previousSample >= frameCount - MIXER_PREFETCH_CHUNK_FRAMES) {
+        loopWrapped = true
+      }
+      previousSample = next.currentSample
+      progress.push(next)
+    })
     const session: MixerSession = {
       trackId: 'long-loop-track',
       sampleRate: SAMPLE_RATE,
@@ -272,18 +284,55 @@ describe('WebAudioEngine against a real AudioWorkletProcessor (OfflineAudioConte
     await streamingEngine.load(session)
     await flushMicrotasks()
     progress.length = 0
+    previousSample = 0
+    loopWrapped = false
     streamingEngine.setLaneGain('vocals', 1)
     streamingEngine.setMasterGain(1)
     streamingEngine.setLoopRange(createLoopRange(0, frameCount, frameCount))
     streamingEngine.play()
-    const suspended = context.suspend((frameCount + MIXER_PREFETCH_CHUNK_FRAMES / 2) / SAMPLE_RATE)
+    const suspendAtSamples = [
+      MIXER_PREFETCH_CHUNK_FRAMES * 2.5,
+      MIXER_PREFETCH_CHUNK_FRAMES * 3.5,
+      MIXER_PREFETCH_CHUNK_FRAMES * 4.5,
+      frameCount + MIXER_PREFETCH_CHUNK_FRAMES / 2,
+    ]
+    const suspensions = suspendAtSamples.map((sample) => context.suspend(sample / SAMPLE_RATE))
     const rendering = context.startRendering()
-    await suspended
+    try {
+      await suspensions[0]
+      await waitForCondition(
+        () => progress.some((next) => next.currentSample > MIXER_PREFETCH_CHUNK_FRAMES * 2),
+        'worklet progress after releasing the first interior chunk',
+      )
+      await waitForCondition(() => frameReads.includes(MIXER_PREFETCH_CHUNK_FRAMES * 4), 'the loop-end prefetch')
+      await context.resume()
+      await suspensions[1]
+      await waitForCondition(
+        () => progress.some((next) => next.currentSample > MIXER_PREFETCH_CHUNK_FRAMES * 3),
+        'worklet progress after releasing the second interior chunk',
+      )
+      await waitForCondition(
+        () => frameReads.filter((startFrame) => startFrame === MIXER_PREFETCH_CHUNK_FRAMES).length > 1,
+        'the loop-start refill after releasing an interior chunk',
+      )
+      expect(progress.every((next) => next.isBuffering !== true)).toBe(true)
+      await context.resume()
+      await suspensions[2]
+      await waitForCondition(
+        () => progress.some((next) => next.currentSample > MIXER_PREFETCH_CHUNK_FRAMES * 4),
+        'worklet progress through the loop-end chunk',
+      )
+      await context.resume()
+      await suspensions[3]
+      await waitForCondition(() => loopWrapped, 'the first completed loop wrap')
 
-    expect(frameReads.filter((startFrame) => startFrame === MIXER_PREFETCH_CHUNK_FRAMES).length).toBeGreaterThan(1)
-    await context.resume()
-    await rendering
-    streamingEngine.dispose()
+      expect(frameReads.filter((startFrame) => startFrame === MIXER_PREFETCH_CHUNK_FRAMES).length).toBeGreaterThan(1)
+      expect(progress.every((next) => next.isBuffering !== true)).toBe(true)
+    } finally {
+      await context.resume().catch(() => undefined)
+      await rendering.catch(() => undefined)
+      streamingEngine.dispose()
+    }
   })
 
   test('keeps sequential prefetch ahead of playback when the selected loop is far away', async () => {
@@ -291,6 +340,8 @@ describe('WebAudioEngine against a real AudioWorkletProcessor (OfflineAudioConte
     const context = new OfflineAudioContext(2, MIXER_PREFETCH_CHUNK_FRAMES * 2, SAMPLE_RATE)
     const streamingEngine = new WebAudioEngine({ context })
     const frameReads: number[] = []
+    const progress: Array<{ currentSample: number; isPlaying: boolean; isBuffering?: boolean }> = []
+    streamingEngine.onProgress((next) => progress.push(next))
     const session: MixerSession = {
       trackId: 'distant-loop-track',
       sampleRate: SAMPLE_RATE,
@@ -314,17 +365,24 @@ describe('WebAudioEngine against a real AudioWorkletProcessor (OfflineAudioConte
     streamingEngine.play()
     const suspended = context.suspend((MIXER_PREFETCH_CHUNK_FRAMES * 1.5) / SAMPLE_RATE)
     const rendering = context.startRendering()
-    await suspended
-    await waitForCondition(
-      () => frameReads.includes(MIXER_PREFETCH_CHUNK_FRAMES * 4),
-      'the fourth sequential prefetch chunk',
-    )
+    try {
+      await suspended
+      await waitForCondition(
+        () => progress.some((next) => next.currentSample > MIXER_PREFETCH_CHUNK_FRAMES),
+        'worklet progress beyond the first sequential chunk',
+      )
+      await waitForCondition(
+        () => frameReads.includes(MIXER_PREFETCH_CHUNK_FRAMES * 4),
+        'the fourth sequential prefetch chunk',
+      )
 
-    expect(frameReads).toContain(MIXER_PREFETCH_CHUNK_FRAMES * 4)
-    expect(frameReads).not.toContain(MIXER_PREFETCH_CHUNK_FRAMES * 8)
-    await context.resume()
-    await rendering
-    streamingEngine.dispose()
+      expect(frameReads).toContain(MIXER_PREFETCH_CHUNK_FRAMES * 4)
+      expect(frameReads).not.toContain(MIXER_PREFETCH_CHUNK_FRAMES * 8)
+    } finally {
+      await context.resume().catch(() => undefined)
+      await rendering.catch(() => undefined)
+      streamingEngine.dispose()
+    }
   })
 
   test('outputs silence and freezes the cursor while the requested frame range is unavailable', async () => {
