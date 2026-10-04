@@ -1,4 +1,4 @@
-# First Public Release — Vercel Hobby Readiness
+# First Public Release — GitHub Pages Readiness
 
 ## Objective
 
@@ -11,8 +11,8 @@ The current app is functional in local tests but is not release-ready: lint and 
 ## Scope and Authorization
 
 - The user authorizes beginning the listed local implementation work on a feature branch, one work unit at a time. This does not authorize dependency installation or registry/network access, Vercel/GitHub account access, push, deployment, release tagging, or public launch. Product/legal decisions remain with the owner.
-- Target architecture: static Vite/React app on Vercel Hobby; audio and results stay in browser storage; model weights are fetched directly from pinned third-party mirrors and verified before use. Accounts and cloud sync are out of scope.
-- Preserve the existing GitHub Pages workflow until the owner chooses the production delivery path. Do not accidentally publish a second production site by pushing to `main`.
+- Target architecture: static Vite/React app on GitHub Pages; audio and results stay in browser storage; model weights are fetched directly from pinned third-party mirrors and verified before use. Accounts and cloud sync are out of scope.
+- GitHub Pages is the sole selected personal public beta host. Preserve its existing workflow; do not configure a second host.
 - Preserve the documented Demucs weight-license caveat. Technical checks cannot grant a license or settle the owner's legal risk decision.
 - Each implementation task gets its applicable tests and documentation and closes with a Conventional Commit. Do not treat a checkbox or this plan as release approval.
 
@@ -31,6 +31,15 @@ The current app is functional in local tests but is not release-ready: lint and 
 
 Strict TDD is enabled by project instruction. For implementation, observe RED → GREEN → REFACTOR with the applicable exact runner (`npm test` for Node or `npm run test:browser` for browser behavior), then run the full checks. Reconfirm configuration on resume. Delivery strategy is `ask-on-risk`; the user selected chained PRs with `stacked-to-main` (each reviewable slice targets `main` in order) as the branch approaches the ~400 authored-line budget. This is a planning heuristic, not a per-task code cap. No push or PR creation is authorized.
 
+## Pages-Only Privacy Integration (2026-10-04)
+
+- **Current scope supersedes historical notes below:** PR #33/#35 merged into `main` at `5fa40a5281056bd2f68f52640b2267ec6359f486`; Vercel PR #38 closed and excluded. Ordered `stacked-to-main` steps: privacy (this slice) -> Pages hardening -> existing audio PR #39. The owner approved the size exception for #39 only; no new exception is granted here.
+- **Route:** delegated direct because privacy implementation, browser tests, Vitest capture integration, and documentation span multiple non-trivial files. Only reconstruct existing `cb3cf21` source and directly necessary `7aad914` privacy evidence; do not import the accumulated branch or Vercel assets.
+- **TDD:** strict TDD remains enabled, runners `npm test` and `npm run test:browser`; historical RED/GREEN is retained rather than inventing a new RED for reconstruction. RDD globally OFF, disabled/unmanaged; no lifecycle is invoked.
+- [ ] **INT-04A:** reconstruct privacy implementation and historical evidence; preserve unrelated release decisions. Forecast: 256 implementation lines plus focused tracker reconciliation, below 400.
+- [ ] **INT-04B:** run `npm run test:browser -- src/ui/privacy/PrivacyNetwork.browser.test.tsx`, then `npm test`, `npm run test:browser`, `npm run typecheck`, `npm run lint`, `npm run build`, and `git diff --check`; record actual outcomes.
+- **Authorization:** local branch preparation and commits only for this worker; no network, installs, remote access, push, PR/issue/label mutation, merge, deployment, or RDD. Parent retains remote publication decisions.
+- **Engram mirror:** pending under `odd/first-public-release/tasks`; registered runtime identity unavailable, so no agent-attributed memory writes.
 ## Work Units
 
 ### Gate A — Make the artifact trustworthy
@@ -46,12 +55,12 @@ Strict TDD is enabled by project instruction. For implementation, observe RED �
 
 ### Gate C — Protect the browser deployment
 
-- [ ] **REL-06 — Configure and verify Vercel response headers.** Add a restrictive, tested CSP and relevant browser security headers through Vercel configuration. Account explicitly for Vite modules, AudioWorklet, workers, WebAssembly/WebGPU, and the Hugging Face/CDN model fetches; do not add COOP/COEP casually because current WASM fallback is single-threaded and cross-origin model loading must keep working. **Accept:** headers observed on served HTML and assets; normal inference and mixer work; forbidden script/connect probes are blocked. **Route forecast:** delegated direct (deployment config plus browser coverage). **Evidence:** observed headers, regression results, commit ID.
+- **REL-06 — Vercel-only response headers omitted from the Pages integration.** The owner excluded this unused hosting configuration; closed PR #38 is not a prerequisite. GitHub Pages does not apply `vercel.json`. No hosted-header guarantee is inferred.
 - [ ] **REL-07 — Confirm privacy and storage behavior.** Verify that input audio and stems are never sent to the hosting origin or analytics, that data is isolated to the browser origin, and that eviction, shared-device access, and origin changes are explained accurately. Check error messages and logs for accidental filenames, paths, or audio bytes. **Accept:** network inspection through upload/separation/export and a concise public privacy/storage notice matching behavior. **Route forecast:** delegated direct if code and docs change; otherwise read-only verification. **Evidence:** network capture summary, notice location, commit ID if changed.
 
 ### Gate D — Rehearse and decide the release
 
-- [ ] **REL-08 — Choose one production delivery path and configure a protected preview.** Decide whether GitHub Pages remains active, is retired, or is intentionally a mirror; configure Vercel build/output/base path and deployment protection accordingly. Vercel Hobby is for personal/non-commercial use; verify plan fit at decision time. Do not deploy or use an account until destination, operation, and credential/session are explicitly authorized. **Accept:** no accidental parallel public release; preview access and routing behave as intended; production domain remains unpublished until go/no-go. **Route forecast:** configuration/documentation work unit after the owner's choice. **Evidence:** configuration readback and preview URL only after authorization.
+- [ ] **REL-08 — Integrate Pages-only workflow hardening.** After privacy merges, rebuild `ci/first-release-slice-05-pages` from actual updated `main` using `e5b2f96`, `359d9fb`, `20950fd`. Keep validation read-only and deployment permissions scoped to successful main pushes. No Vercel dependency or second host. Remote settings/protections and hosted behavior require their own evidence.
 - [ ] **REL-09 — Run the release acceptance matrix on the production build.** Exercise upload → separation → library → mixer → WAV/ZIP export; both Basic and Rock; WebGPU and WASM fallback; bad model/network response; cancellation/retry; low storage, refresh, and data eviction. Include target browser matrix, keyboard/accessibility checks, and performance/large-file measurements. **Accept:** all supported paths pass; failures have clear dispositions; accessibility and performance targets are recorded before go/no-go. **Route forecast:** verification first, with separate scoped fixes for findings. **Evidence:** dated browser/device matrix and results.
 - [ ] **REL-10 — Resolve legal/product and launch decisions.** Owner explicitly decides whether the scientific-use-only Demucs weight restriction is acceptable for this public, non-commercial release, and approves the public privacy copy, domain, support channel, and release scope. Prepare version/changelog, rollback procedure, and minimal post-launch monitoring. **Accept:** signed-off go/no-go record; no unresolved blocking issue; release tag/deployment only after separate authorization. **Route forecast:** decision and documentation; remote publishing is not implied by this plan. **Evidence:** decision record, final check results, release identity when authorized.
 
@@ -73,4 +82,4 @@ At final review, capture the commit, artifact hash, commands and results, suppor
 
 ## Next Step
 
-Proceed to REL-05 on `feat/first-public-release` as the next `stacked-to-main` slice. Preserve local-only work; pushes and PR creation still require separate authorization. Synchronize this full task document after each completed work unit.
+Complete the privacy candidate, then integrate Pages workflow hardening on actual updated main after privacy merges, then resume audio PR #39 with its existing approved size exception. This privacy slice does not remove the five-minute restriction. No remote operation is performed by this worker; publication remains parent-owned. Engram mirror remains pending without registered runtime identity.
