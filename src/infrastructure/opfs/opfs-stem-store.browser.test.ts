@@ -44,6 +44,40 @@ test('incremental lane writer emits byte-identical WAV and finalizes only after 
   )
 })
 
+test('reads validated WAV metadata and exact aligned frame ranges without returning the whole lane', async () => {
+  const store = newStore()
+  const left = Float32Array.from([0.1, -0.2, 0.3, -0.4, 0.5])
+  const right = Float32Array.from([-0.5, 0.6, -0.7, 0.8, -0.9])
+  await store.writeLane('stems/ranged', 'vocals', encodeFloat32Wav({ sampleRate: 48_000, planar: [left, right] }))
+
+  await expect(store.readLaneInfo('stems/ranged', 'vocals')).resolves.toEqual({ sampleRate: 48_000, frameCount: 5 })
+  await expect(store.readLaneFrames('stems/ranged', 'vocals', 2, 2)).resolves.toEqual([
+    Float32Array.from([0.3, -0.4]),
+    Float32Array.from([-0.7, 0.8]),
+  ])
+  await expect(store.readLaneFrames('stems/ranged', 'vocals', 4, 2)).rejects.toThrow('opfs-stem-store.invalid_frame_range')
+
+  const large = new Float32Array(16_385)
+  await store.writeLane('stems/range-limit', 'vocals', encodeFloat32Wav({ sampleRate: 48_000, planar: [large, large] }))
+  await expect(store.readLaneFrames('stems/range-limit', 'vocals', 0, 16_385))
+    .rejects.toThrow('opfs-stem-store.invalid_frame_range')
+})
+
+test('rejects an invalid float WAV format and an already-aborted frame-range request', async () => {
+  const store = newStore()
+  const bytes = encodeFloat32Wav({ sampleRate: 44_100, planar: [new Float32Array([0.25]), new Float32Array([-0.25])] })
+  const malformed = bytes.slice()
+  new DataView(malformed.buffer).setUint16(20, 1, true)
+  await store.writeLane('stems/malformed-range', 'vocals', malformed)
+  await expect(store.readLaneInfo('stems/malformed-range', 'vocals')).rejects.toThrow('opfs-stem-store.invalid_wav_header')
+
+  const controller = new AbortController()
+  controller.abort()
+  await store.writeLane('stems/aborted-range', 'vocals', bytes)
+  await expect(store.readLaneFrames('stems/aborted-range', 'vocals', 0, 1, controller.signal))
+    .rejects.toMatchObject({ name: 'AbortError' })
+})
+
 test('aborting an incremental lane writer removes its partial file', async () => {
   const store = newStore()
   const writer = await store.beginLaneWrite('stems/aborted', 'vocals', 44_100, 4)

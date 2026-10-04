@@ -1,4 +1,4 @@
-import { MAX_MIXER_LANES } from '../../domain/mixer/mixer'
+import { MAX_MIXER_LANES, MIXER_FRAME_CHUNK_SIZE } from '../../domain/mixer/mixer'
 
 /**
  * The `AudioWorkletNode` <-> `AudioWorkletProcessor` message/parameter
@@ -54,6 +54,29 @@ export interface MixerWorkletLoadMessage {
   readonly lanes: readonly MixerWorkletLane[]
 }
 
+export interface MixerWorkletStreamLoadMessage {
+  readonly kind: 'stream-load'
+  readonly sampleRate: number
+  readonly frameCount: number
+  readonly lanes: readonly Omit<MixerWorkletLane, 'channels'>[]
+}
+
+export interface MixerWorkletChunkMessage {
+  readonly kind: 'chunk'
+  readonly startFrame: number
+  readonly lanes: readonly (readonly [Float32Array, Float32Array])[]
+}
+
+export interface MixerWorkletFlushMessage {
+  readonly kind: 'flush'
+  readonly sample: number
+}
+
+export interface MixerWorkletChunkFailedMessage {
+  readonly kind: 'chunk-failed'
+  readonly startFrame: number
+}
+
 export interface MixerWorkletPlayMessage {
   readonly kind: 'play'
 }
@@ -78,6 +101,10 @@ export type MixerWorkletInboundMessage =
   | MixerWorkletPauseMessage
   | MixerWorkletSeekMessage
   | MixerWorkletLoopRangeMessage
+  | MixerWorkletStreamLoadMessage
+  | MixerWorkletChunkMessage
+  | MixerWorkletFlushMessage
+  | MixerWorkletChunkFailedMessage
 
 /**
  * Playhead/time-readout update, posted on transport state changes and roughly
@@ -90,12 +117,26 @@ export interface MixerWorkletProgressMessage {
   readonly kind: 'progress'
   readonly currentSample: number
   readonly isPlaying: boolean
+  readonly isBuffering?: boolean
+  readonly rangeError?: 'range-read-failed'
 }
 
-export type MixerWorkletOutboundMessage = MixerWorkletProgressMessage
+export interface MixerWorkletNeedChunkMessage {
+  readonly kind: 'need-chunk'
+  readonly startFrame: number
+}
+
+export interface MixerWorkletReleaseChunkMessage {
+  readonly kind: 'release-chunk'
+  readonly startFrame: number
+}
+
+export type MixerWorkletOutboundMessage = MixerWorkletProgressMessage | MixerWorkletNeedChunkMessage | MixerWorkletReleaseChunkMessage
 
 /** ~20 ms of batching between progress posts, independent of sample rate. */
 export const PROGRESS_INTERVAL_SECONDS = 0.02
+export const MIXER_PREFETCH_CHUNK_FRAMES = MIXER_FRAME_CHUNK_SIZE
+export const MIXER_PREFETCH_SLOT_COUNT = 4
 
 /**
  * The registered processor name, shared between `mixer-processor.ts`
@@ -164,6 +205,14 @@ export function isMixerWorkletLoadMessage(value: unknown): value is MixerWorklet
     && message.lanes.every(isLane)
 }
 
+function chunkData(value: unknown): value is MixerWorkletChunkMessage {
+  const message = record(value)
+  return message !== undefined && message.kind === 'chunk'
+    && finiteNonNegativeInteger(message.startFrame)
+    && Array.isArray(message.lanes) && message.lanes.length > 0 && message.lanes.length <= MAX_MIXER_LANES
+    && message.lanes.every(stereoChannels)
+}
+
 export function isMixerWorkletSeekMessage(value: unknown): value is MixerWorkletSeekMessage {
   const message = record(value)
   return message !== undefined && message.kind === 'seek' && finiteNonNegativeInteger(message.sample)
@@ -184,6 +233,12 @@ export function isMixerWorkletInboundMessage(value: unknown): value is MixerWork
   if (message === undefined) return false
   if (message.kind === 'play' || message.kind === 'pause') return true
   if (message.kind === 'load') return isMixerWorkletLoadMessage(value)
+  if (message.kind === 'stream-load') return finiteNonNegativeInteger(message.sampleRate)
+    && message.sampleRate > 0 && finiteNonNegativeInteger(message.frameCount)
+    && Array.isArray(message.lanes) && message.lanes.length > 0 && message.lanes.length <= MAX_MIXER_LANES
+  if (message.kind === 'chunk') return chunkData(value)
+  if (message.kind === 'flush') return isMixerWorkletSeekMessage({ kind: 'seek', sample: message.sample })
+  if (message.kind === 'chunk-failed') return finiteNonNegativeInteger(message.startFrame)
   if (message.kind === 'seek') return isMixerWorkletSeekMessage(value)
   if (message.kind === 'set-loop-range') return isMixerWorkletLoopRangeMessage(value)
   return false

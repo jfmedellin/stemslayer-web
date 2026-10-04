@@ -188,6 +188,8 @@ export function assertLaneInLayout(laneId: string, lanes: readonly StemLane[]): 
 
 /** Peak/waveform envelope bin count per lane (`engine/stem_session.py:30`, `PEAK_BIN_COUNT`). */
 export const PEAK_BIN_COUNT = 2000
+/** Fixed number of frames used by range scans and AudioWorklet prefetch slots. */
+export const MIXER_FRAME_CHUNK_SIZE = 16_384
 
 /**
  * Downsamples a lane's decoded planar stereo PCM into `binCount` max-abs

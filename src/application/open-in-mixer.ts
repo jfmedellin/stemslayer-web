@@ -1,10 +1,10 @@
-import { decodeFloat32Wav } from '../domain/audio/float32-wav'
-import { FALLBACK_MIXER_PROFILE } from '../domain/mixer/mixer'
+import { FALLBACK_MIXER_PROFILE, MIXER_FRAME_CHUNK_SIZE, PEAK_BIN_COUNT } from '../domain/mixer/mixer'
 import type { Track } from '../domain/track'
 import type {
   AudioEnginePort,
   MixerSession,
   MixerSessionLane,
+  MixerFrameBlock,
 } from './ports/audio-engine-port'
 import type { CatalogPort } from './ports/catalog-port'
 import { resolveStemProfile } from './resolve-stem-profile'
@@ -22,13 +22,6 @@ export type OpenInMixerResult =
 
 const FALLBACK_FRAME_COUNT = 1
 const FALLBACK_SAMPLE_RATE = 44_100
-
-function isAllZero(channel: Float32Array): boolean {
-  for (const sample of channel) {
-    if (sample !== 0) return false
-  }
-  return true
-}
 
 /**
  * The 4-lane Basic layout as a silent error placeholder, used both when the
@@ -55,45 +48,69 @@ function fallbackSession(trackId: string): MixerSession {
   })
 }
 
-async function decodeLane(
+interface LaneScan {
+  readonly laneId: string
+  readonly displayName: string
+  readonly absentable: boolean
+  readonly sampleRate: number
+  readonly frameCount: number
+  readonly peaks: Float32Array
+}
+
+async function inspectLanes(
   track: Track,
-  laneId: string,
-  displayName: string,
-  absentable: boolean,
+  profileLanes: readonly { laneId: string; displayName: string; absentable: boolean }[],
   stemStore: StemStorePort,
-): Promise<MixerSessionLane & { readonly sampleRate: number }> {
-  const bytes = await stemStore.readLane(track.resultKey, laneId)
-  const decoded = decodeFloat32Wav(bytes)
-  if (decoded.planar.length !== 2) {
-    throw new Error(`open-in-mixer.unsupported_channel_count:${decoded.planar.length}`)
+  signal: AbortSignal,
+): Promise<{ readonly lanes: readonly MixerSessionLane[]; readonly sampleRate: number; readonly frameCount: number }> {
+  if (stemStore.readLaneInfo === undefined || stemStore.readLaneFrames === undefined) {
+    throw new Error('open-in-mixer.range_reads_unsupported')
   }
-  const [left, right] = decoded.planar
-  // An absentable role lane (Rock's guitar_center/guitar_sides) with no
-  // detectable energy is still included as real, aligned, controllable
-  // silence rather than hidden (`feature-parity.md`'s Mixer "Absent lane"
-  // row) — "no detectable energy" is defined here as every decoded sample
-  // being exactly 0, the simplest and equally-correct reading of the
-  // residual math the writer's task explicitly allowed choosing between.
-  const absent = absentable && isAllZero(left) && isAllZero(right)
+  const readLaneInfo = stemStore.readLaneInfo.bind(stemStore)
+  const readLaneFrames = stemStore.readLaneFrames.bind(stemStore)
+  const metadata = await Promise.all(profileLanes.map(async (lane): Promise<LaneScan> => {
+    const info = await readLaneInfo(track.resultKey, lane.laneId)
+    if (info.frameCount <= 0) throw new Error('open-in-mixer.empty_lane')
+    return { ...lane, ...info, peaks: new Float32Array(PEAK_BIN_COUNT) }
+  }))
+  const sampleRate = metadata[0]?.sampleRate ?? FALLBACK_SAMPLE_RATE
+  const frameCount = metadata[0]?.frameCount ?? 0
+  if (metadata.some((lane) => lane.sampleRate !== sampleRate)) throw new Error('open-in-mixer.sample_rate_mismatch')
+  if (metadata.some((lane) => lane.frameCount !== frameCount)) throw new Error('open-in-mixer.lane_length_mismatch')
+  const absentByLane = metadata.map((lane) => lane.absentable)
+  for (let start = 0; start < frameCount; start += MIXER_FRAME_CHUNK_SIZE) {
+    const count = Math.min(MIXER_FRAME_CHUNK_SIZE, frameCount - start)
+    const blocks = await Promise.all(metadata.map((lane) =>
+      readLaneFrames(track.resultKey, lane.laneId, start, count, signal)))
+    for (let laneIndex = 0; laneIndex < metadata.length; laneIndex += 1) {
+      const lane = metadata[laneIndex]
+      const [left, right] = blocks[laneIndex]
+      for (let offset = 0; offset < count; offset += 1) {
+        if (left[offset] !== 0 || right[offset] !== 0) absentByLane[laneIndex] = false
+        const bin = Math.min(PEAK_BIN_COUNT - 1, Math.floor(((start + offset) * PEAK_BIN_COUNT) / frameCount))
+        const peak = Math.max(Math.abs(left[offset]), Math.abs(right[offset]))
+        if (peak > lane.peaks[bin]) lane.peaks[bin] = peak
+      }
+    }
+  }
   return {
-    laneId,
-    displayName,
-    channels: [left, right] as const,
-    absent,
-    sampleRate: decoded.sampleRate,
+    sampleRate,
+    frameCount,
+    lanes: Object.freeze(metadata.map((lane, index) => Object.freeze({
+      laneId: lane.laneId,
+      displayName: lane.displayName,
+      absent: lane.absentable && absentByLane[index],
+      peaks: lane.peaks,
+    }))),
   }
 }
 
 /**
- * Loads a track's stored stem lanes into a `MixerSession` and hands it to
- * the `AudioEnginePort`. Reuses `resolveStemProfile` (the same lane-set
- * derivation `separate.ts` already uses) rather than re-deriving lane ids,
- * and decodes each lane with the exact byte-identical `decodeFloat32Wav`
- * codec — never `AudioContext.decodeAudioData`, which would risk
- * resample/drift on already-exact stored PCM
+ * Validates and scans each OPFS lane through bounded frame ranges before
+ * handing metadata and a synchronized range reader to the audio engine.
  * (`docs/decisions/architecture.md`, Runtime topology).
  *
- * A track that can't be found, or whose stems fail to load/decode or
+ * A track that can't be found, or whose stems fail to validate or
  * disagree on sample rate, still calls `AudioEnginePort.load` — with the
  * 4-lane Basic-layout error placeholder session instead of throwing,
  * matching the domain's failed-load fallback rule.
@@ -113,47 +130,44 @@ async function decodeLane(
 export async function openInMixer(
   trackId: string,
   deps: OpenInMixerDeps,
-  options?: { readonly isStale?: () => boolean },
+  options?: { readonly isStale?: () => boolean; readonly signal?: AbortSignal },
 ): Promise<OpenInMixerResult> {
   const isStale = options?.isStale ?? (() => false)
 
   const track = await deps.catalog.getById(trackId)
   if (track === undefined) {
     const session = fallbackSession(trackId)
-    if (!isStale()) await deps.audioEngine.load(session)
+    if (!isStale() && !options?.signal?.aborted) await deps.audioEngine.load(session)
     return Object.freeze({ ok: false, reason: 'track-not-found', session })
   }
 
   try {
     const profile = resolveStemProfile(track.profileId)
-    const decodedLanes = await Promise.all(
-      profile.lanes.map((lane) =>
-        decodeLane(track, lane.laneId, lane.displayName, lane.absentable, deps.stemStore)),
-    )
-
-    const sampleRate = decodedLanes[0]?.sampleRate ?? FALLBACK_SAMPLE_RATE
-    if (decodedLanes.some((lane) => lane.sampleRate !== sampleRate)) {
-      throw new Error('open-in-mixer.sample_rate_mismatch')
-    }
-    const frameCount = decodedLanes[0]?.channels[0].length ?? 0
-    if (decodedLanes.some((lane) => lane.channels[0].length !== frameCount || lane.channels[1].length !== frameCount)) {
-      throw new Error('open-in-mixer.lane_length_mismatch')
+    const scanned = await inspectLanes(track, profile.lanes, deps.stemStore, options?.signal ?? new AbortController().signal)
+    const readLaneFrames = deps.stemStore.readLaneFrames
+    if (readLaneFrames === undefined) throw new Error('open-in-mixer.range_reads_unsupported')
+    const readFrames = async (start: number, count: number, signal?: AbortSignal): Promise<MixerFrameBlock> => {
+      if (!Number.isSafeInteger(start) || start < 0 || !Number.isSafeInteger(count)
+        || count <= 0 || count > MIXER_FRAME_CHUNK_SIZE || start + count > scanned.frameCount) {
+        throw new Error('open-in-mixer.invalid_frame_range')
+      }
+      return Promise.all(profile.lanes.map((lane) =>
+        readLaneFrames.call(deps.stemStore, track.resultKey, lane.laneId, start, count, signal)))
     }
 
     const session: MixerSession = Object.freeze({
       trackId,
-      sampleRate,
-      frameCount,
-      lanes: Object.freeze(decodedLanes.map(({ laneId, displayName, channels, absent }) => Object.freeze({
-        laneId, displayName, channels, absent,
-      }))),
+      sampleRate: scanned.sampleRate,
+      frameCount: scanned.frameCount,
+      lanes: scanned.lanes,
+      readFrames,
       fallback: false,
     })
-    if (!isStale()) await deps.audioEngine.load(session)
+    if (!isStale() && !options?.signal?.aborted) await deps.audioEngine.load(session)
     return Object.freeze({ ok: true, session })
   } catch {
     const session = fallbackSession(trackId)
-    if (!isStale()) await deps.audioEngine.load(session)
+    if (!isStale() && !options?.signal?.aborted) await deps.audioEngine.load(session)
     return Object.freeze({ ok: false, reason: 'stems-unavailable', session })
   }
 }

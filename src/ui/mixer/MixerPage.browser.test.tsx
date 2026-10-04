@@ -150,6 +150,56 @@ test('opens a track and renders all six lanes in profile order, including the ab
   expect(document.querySelector('.mixer-track-artist')?.textContent).toBe('Yui')
 })
 
+test('shows an accessible buffering status while the bounded audio reader refills', async () => {
+  const testDeps = await buildDeps(baseTrack())
+  renderMixer(testDeps)
+  await waitForLoaded(testDeps.audioEngine)
+
+  flushSync(() => testDeps.audioEngine.reportProgress({ currentSample: 24, isPlaying: true, isBuffering: true }))
+  expect(document.querySelector('.mixer-buffering')?.textContent).toBe('Buffering audio…')
+  expect(document.querySelector('.mixer-buffering')?.getAttribute('role')).toBe('status')
+
+  flushSync(() => testDeps.audioEngine.reportProgress({ currentSample: 24, isPlaying: true, isBuffering: false }))
+  expect(document.querySelector('.mixer-buffering')).toBeNull()
+})
+
+test('shows a safe range-read failure and tells the user Play retries it', async () => {
+  const testDeps = await buildDeps(baseTrack())
+  renderMixer(testDeps)
+  await waitForLoaded(testDeps.audioEngine)
+
+  flushSync(() => testDeps.audioEngine.reportProgress({
+    currentSample: 24,
+    isPlaying: false,
+    rangeError: 'range-read-failed',
+  }))
+  const failure = document.querySelector<HTMLElement>('.mixer-range-error')
+  expect(failure?.textContent).toBe('Audio data could not be read. Press Play to retry.')
+  expect(failure?.getAttribute('role')).toBe('alert')
+  expect(failure?.textContent).not.toContain('stems/')
+
+  clickButton('.mixer-play-pause')
+  expect(testDeps.audioEngine.playCalls).toBe(1)
+})
+
+test('cancels the current range reader when the mixer switches tracks', async () => {
+  const testDeps = await buildDeps(baseTrack())
+  renderMixer(testDeps)
+  await waitForLoaded(testDeps.audioEngine)
+
+  flushSync(() => root.render(
+    <MixerPage
+      deps={testDeps.deps}
+      trackId="missing-track"
+      onBackToLibrary={() => undefined}
+      onExport={() => undefined}
+    />,
+  ))
+  await waitFor(() => document.querySelector('.mixer-load-error') !== null)
+
+  expect(testDeps.audioEngine.cancelPendingReadsCalls).toBe(1)
+})
+
 test('solo toggles call setLaneGain with the domain\'s exact multi-solo effective gain', async () => {
   const testDeps = await buildDeps(baseTrack())
   renderMixer(testDeps)
