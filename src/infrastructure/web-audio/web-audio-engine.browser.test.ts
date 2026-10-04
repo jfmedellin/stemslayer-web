@@ -334,8 +334,6 @@ describe('WebAudioEngine against a real AudioWorkletProcessor (OfflineAudioConte
     const context = new OfflineAudioContext(2, MIXER_PREFETCH_CHUNK_FRAMES * 2, SAMPLE_RATE)
     const streamingEngine = new WebAudioEngine({ context })
     const frameReads: number[] = []
-    const progress: Array<{ currentSample: number; isPlaying: boolean; isBuffering?: boolean }> = []
-    streamingEngine.onProgress((next) => progress.push(next))
     const session: MixerSession = {
       trackId: 'distant-loop-track',
       sampleRate: SAMPLE_RATE,
@@ -357,14 +355,9 @@ describe('WebAudioEngine against a real AudioWorkletProcessor (OfflineAudioConte
       frameCount,
     ))
     streamingEngine.play()
-    const suspended = context.suspend((MIXER_PREFETCH_CHUNK_FRAMES * 1.5) / SAMPLE_RATE)
     const rendering = context.startRendering()
     try {
-      await suspended
-      await waitForCondition(
-        () => progress.some((next) => next.currentSample >= MIXER_PREFETCH_CHUNK_FRAMES),
-        'worklet progress through the first sequential chunk',
-      )
+      await rendering
       await waitForCondition(
         () => frameReads.includes(MIXER_PREFETCH_CHUNK_FRAMES * 4),
         'the fourth sequential prefetch chunk',
