@@ -6,6 +6,7 @@ import {
   createTriangularWeight,
   createWindowOffsets,
   processPlanarWindows,
+  processPlanarWindowsStreaming,
 } from '../../../src/infrastructure/onnx-worker/windowing'
 
 function signal(length: number, phase = 0): Float32Array {
@@ -18,6 +19,28 @@ function maxError(actual: Float32Array, expected: Float32Array): number {
     maximum = Math.max(maximum, Math.abs(actual[index] - expected[index]))
   }
   return maximum
+}
+
+function independentOverlapAdd(frameCount: number, windowValues: readonly number[]): Float32Array {
+  const weightedSamples = new Float64Array(frameCount)
+  const totalWeights = new Float64Array(frameCount)
+  const halfSegment = MODEL_SEGMENT_SAMPLES / 2
+  const referenceWeight = (modelCoordinate: number): number =>
+    Math.min(modelCoordinate + 1, MODEL_SEGMENT_SAMPLES - modelCoordinate) / halfSegment
+
+  for (let windowIndex = 0, offset = 0; offset < frameCount; windowIndex += 1, offset += MODEL_WINDOW_STRIDE) {
+    const naturalLength = Math.min(MODEL_SEGMENT_SAMPLES, frameCount - offset)
+    const centeredPad = Math.floor((MODEL_SEGMENT_SAMPLES - naturalLength) / 2)
+    for (let sourceIndex = 0; sourceIndex < naturalLength; sourceIndex += 1) {
+      const absoluteFrame = offset + sourceIndex
+      const modelCoordinate = centeredPad + sourceIndex
+      const weight = referenceWeight(modelCoordinate)
+      weightedSamples[absoluteFrame] += windowValues[windowIndex] * weight
+      totalWeights[absoluteFrame] += weight
+    }
+  }
+
+  return Float32Array.from(weightedSamples, (sample, frame) => sample / totalWeights[frame])
 }
 
 async function reconstructIdentity(planar: readonly Float32Array[]) {
@@ -54,6 +77,45 @@ describe('fixed ONNX window plan', () => {
 })
 
 describe('processPlanarWindows', () => {
+  test('uses centered model coordinates for partial-window overlap weights', async () => {
+    const frameCount = MODEL_WINDOW_STRIDE + 100_000
+    const emitted: Array<{ offset: number; channel: Float32Array }> = []
+    let windowIndex = 0
+    const expected = independentOverlapAdd(frameCount, [1, 2])
+
+    await processPlanarWindowsStreaming(
+      [new Float32Array(frameCount)],
+      () => [new Float32Array(MODEL_SEGMENT_SAMPLES).fill(++windowIndex)],
+      ({ offset, channels }) => { emitted.push({ offset, channel: channels[0] }) },
+    )
+
+    const actual = new Float32Array(frameCount)
+    for (const chunk of emitted) actual.set(chunk.channel, chunk.offset)
+    expect(windowIndex).toBe(2)
+    expect(maxError(actual, expected)).toBeLessThanOrEqual(1e-6)
+  })
+
+  test('streams finalized chunks while retaining only overlap-sized accumulation buffers', async () => {
+    const frameCount = MODEL_WINDOW_STRIDE * 3 + 19
+    const chunks: readonly Float32Array[][] = []
+    const capacities: number[] = []
+
+    await processPlanarWindowsStreaming(
+      [signal(frameCount)],
+      (window) => window.map((channel) => channel.slice()),
+      (chunk) => { (chunks as Float32Array[][]).push([...chunk.channels]) },
+      undefined,
+      (bufferCapacity) => { capacities.push(bufferCapacity) },
+    )
+
+    const flattened = Float32Array.from(chunks.flatMap((chunk) => Array.from(chunk[0])))
+    expect(flattened).toHaveLength(frameCount)
+    expect(maxError(flattened, signal(frameCount))).toBeLessThanOrEqual(1e-6)
+    expect(capacities.length).toBeGreaterThan(0)
+    expect(new Set(capacities)).toEqual(new Set([MODEL_SEGMENT_SAMPLES]))
+    expect(chunks.length).toBeGreaterThan(1)
+  })
+
   test.each([
     ['short', 9_001],
     ['exact segment', MODEL_SEGMENT_SAMPLES],
@@ -143,23 +205,36 @@ describe('processPlanarWindows', () => {
       const half = MODEL_SEGMENT_SAMPLES / 2
       return index < half ? (index + 1) / half : (MODEL_SEGMENT_SAMPLES - index) / half
     }
-    const expectedBlend = (leftValue: number, rightValue: number, overlapIndex: number): number => {
-      const leftWeight = independentWeight(MODEL_WINDOW_STRIDE + overlapIndex)
-      const rightWeight = independentWeight(overlapIndex)
+    const expectedBlend = (
+      leftValue: number,
+      rightValue: number,
+      leftModelCoordinate: number,
+      rightModelCoordinate: number,
+    ): number => {
+      const leftWeight = independentWeight(leftModelCoordinate)
+      const rightWeight = independentWeight(rightModelCoordinate)
       return (leftValue * leftWeight + rightValue * rightWeight) / (leftWeight + rightWeight)
     }
 
     const firstOverlapSamples = [0, Math.floor((MODEL_SEGMENT_SAMPLES - MODEL_WINDOW_STRIDE) / 2), 85_994]
+    const secondWindowLength = Math.min(MODEL_SEGMENT_SAMPLES, frameCount - MODEL_WINDOW_STRIDE)
+    const secondWindowTrimStart = Math.floor((MODEL_SEGMENT_SAMPLES - secondWindowLength) / 2)
     for (const overlapIndex of firstOverlapSamples) {
       expect(output[MODEL_WINDOW_STRIDE + overlapIndex]).toBeCloseTo(
-        expectedBlend(1, 2, overlapIndex),
+        expectedBlend(1, 2, MODEL_WINDOW_STRIDE + overlapIndex, secondWindowTrimStart + overlapIndex),
         6,
       )
     }
 
+    const partialTrimStart = Math.floor((MODEL_SEGMENT_SAMPLES - 7) / 2)
     for (const overlapIndex of [0, 3, 6]) {
       expect(output[MODEL_WINDOW_STRIDE * 2 + overlapIndex]).toBeCloseTo(
-        expectedBlend(2, 3, overlapIndex),
+        expectedBlend(
+          2,
+          3,
+          secondWindowTrimStart + MODEL_WINDOW_STRIDE + overlapIndex,
+          partialTrimStart + overlapIndex,
+        ),
         6,
       )
     }

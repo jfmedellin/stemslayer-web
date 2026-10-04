@@ -5,7 +5,7 @@ import type { ModelFootprint, ModelStorePort } from '../../../src/application/po
 import type { StemStorePort } from '../../../src/application/ports/stem-store-port'
 import { BASIC_PROFILE } from '../../../src/domain/stem-profile'
 import { OnnxWorkerInference } from '../../../src/infrastructure/onnx-worker/onnx-worker-inference'
-import type { WorkerJobMessage, WorkerResultMessage } from '../../../src/infrastructure/onnx-worker/protocol'
+import type { WorkerChunkMessage, WorkerJobMessage } from '../../../src/infrastructure/onnx-worker/protocol'
 
 interface FakeWorker {
   postMessage(message: WorkerJobMessage, transfer: Transferable[]): void
@@ -29,12 +29,15 @@ const modelStore: ModelStorePort = {
   read: async () => Uint8Array.from([1]),
 }
 
-function resultMessage(job: InferenceJob): WorkerResultMessage {
+function chunkMessage(job: InferenceJob): WorkerChunkMessage {
   return {
-    kind: 'result',
+    kind: 'chunk',
     trackId: job.trackId,
     resultKey: job.resultKey,
     sampleRate: 44_100,
+    frameCount: 1,
+    chunkIndex: 0,
+    offset: 0,
     lanes: job.profile.lanes.map(({ laneId }) => ({
       laneId,
       channels: [new Float32Array([0.1]), new Float32Array([-0.1])],
@@ -52,7 +55,8 @@ describe('OnnxWorkerInference against a fully injected fake Worker', () => {
     let writeCount = 0
 
     const stemStore: StemStorePort = {
-      writeLane: async () => {
+      beginLaneWrite: async () => ({
+        writeChunk: async () => {
         writeCount += 1
         if (writeCount === 1) {
           order.push('write-started')
@@ -65,7 +69,11 @@ describe('OnnxWorkerInference against a fully injected fake Worker', () => {
         // succeeding after the first write is released, so the test proves
         // the wait-then-delete path for a genuinely failed run.
         throw new Error('second_write_failed')
-      },
+        },
+        finalize: async () => undefined,
+        abort: async () => undefined,
+      }),
+      writeLane: async () => undefined,
       readLane: async () => { throw new Error('unused') },
       delete: async () => { order.push('delete-called') },
       exists: async () => false,
@@ -96,7 +104,7 @@ describe('OnnxWorkerInference against a fully injected fake Worker', () => {
       check()
     })
 
-    fakeWorker.onmessage?.({ data: resultMessage(theJob) } as MessageEvent<unknown>)
+    fakeWorker.onmessage?.({ data: chunkMessage(theJob) } as MessageEvent<unknown>)
     await writeStartedSignal
 
     // Simulate an unrelated Worker failure arriving while the write is still in flight.

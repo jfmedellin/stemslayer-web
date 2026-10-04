@@ -6,13 +6,14 @@ import {
   type InferenceProgress,
 } from '../../application/ports/inference-port'
 import type { ModelStorePort } from '../../application/ports/model-store-port'
-import type { StemStorePort } from '../../application/ports/stem-store-port'
-import { encodeFloat32Wav } from '../../domain/audio/float32-wav'
+import type { StemLaneWriteSession, StemStorePort } from '../../application/ports/stem-store-port'
 import { WebAudioInferenceDecoder, type DecodedInferenceAudio } from './audio-decoder'
 import {
   isWorkerOutboundMessage,
+  type WorkerAckMessage,
   type WorkerJobMessage,
-  type WorkerResultMessage,
+  type WorkerChunkMessage,
+  type WorkerCompleteMessage,
 } from './protocol'
 
 interface AudioDecoder {
@@ -22,7 +23,7 @@ interface AudioDecoder {
 interface WorkerLike {
   onmessage: ((event: MessageEvent<unknown>) => void) | null
   onerror: ((event: ErrorEvent) => void) | null
-  postMessage(message: WorkerJobMessage, transfer: Transferable[]): void
+  postMessage(message: WorkerJobMessage | WorkerAckMessage, transfer?: Transferable[]): void
   terminate(): void
 }
 
@@ -63,6 +64,10 @@ export class OnnxWorkerInference implements InferencePort {
     let lastWindow = 0
     let totalWindows: number | undefined
     let persistence: Promise<void> | undefined
+    let expectedFrameCount: number | undefined
+    let nextChunkIndex = 0
+    let nextOffset = 0
+    const laneWriters = new Map<string, StemLaneWriteSession>()
     let resolveResult!: (keys: readonly string[]) => void
     let rejectResult!: (error: unknown) => void
 
@@ -72,6 +77,14 @@ export class OnnxWorkerInference implements InferencePort {
     })
 
     const cleanup = (): Promise<void> => this.stemStore.delete(job.resultKey)
+    const abortWriters = async (): Promise<void> => {
+      const failures: unknown[] = []
+      for (const writer of laneWriters.values()) {
+        try { await writer.abort() } catch (error) { failures.push(error) }
+      }
+      laneWriters.clear()
+      if (failures.length > 0) throw new AggregateError(failures, 'onnx-worker-inference.abort_failed')
+    }
     const terminateWorker = (): void => {
       worker?.terminate()
       worker = undefined
@@ -82,6 +95,9 @@ export class OnnxWorkerInference implements InferencePort {
       terminateWorker()
       await (persistence?.catch(() => undefined) ?? Promise.resolve())
       if (settled) return
+      try { await abortWriters() } catch (abortError) {
+        error = new AggregateError([error, abortError], 'onnx-worker-inference.abort_failed')
+      }
       try {
         await cleanup()
       } catch (cleanupError) {
@@ -98,26 +114,59 @@ export class OnnxWorkerInference implements InferencePort {
     const checkCorrelation = (message: { trackId: string; resultKey: string }): boolean =>
       message.trackId === job.trackId && message.resultKey === job.resultKey
 
-    const persist = async (message: WorkerResultMessage): Promise<void> => {
-      const expectedIds = job.profile.lanes.map(({ laneId }) => laneId)
-      const actualIds = message.lanes.map(({ laneId }) => laneId)
-      if (message.sampleRate !== 44_100 || JSON.stringify(actualIds) !== JSON.stringify(expectedIds)) {
-        throw workerFailure('result_contract')
-      }
+    const expectedIds = job.profile.lanes.map(({ laneId }) => laneId)
+    const persistChunk = async (message: WorkerChunkMessage): Promise<void> => {
+      if (
+        message.sampleRate !== 44_100
+        || message.frameCount !== expectedFrameCount
+        || message.chunkIndex !== nextChunkIndex
+        || message.offset !== nextOffset
+        || JSON.stringify(message.lanes.map(({ laneId }) => laneId)) !== JSON.stringify(expectedIds)
+      ) throw workerFailure('chunk_contract')
 
-      const keys: string[] = []
+      if (laneWriters.size === 0) {
+        for (const laneId of expectedIds) {
+          laneWriters.set(laneId, await this.stemStore.beginLaneWrite(
+            job.resultKey, laneId, message.sampleRate, message.frameCount,
+          ))
+        }
+      }
+      const chunkLength = message.lanes[0].channels[0].length
       for (const lane of message.lanes) {
+        const writer = laneWriters.get(lane.laneId)
+        if (writer === undefined) throw workerFailure('chunk_lane_contract')
+        await writer.writeChunk(lane.channels)
+      }
+      nextChunkIndex += 1
+      nextOffset += chunkLength
+      if (cancelled) throw new InferenceCancelled()
+      worker?.postMessage({
+        kind: 'ack',
+        trackId: job.trackId,
+        resultKey: job.resultKey,
+        chunkIndex: message.chunkIndex,
+      })
+    }
+
+    const finalize = async (message: WorkerCompleteMessage): Promise<void> => {
+      if (
+        message.sampleRate !== 44_100
+        || message.frameCount !== expectedFrameCount
+        || nextOffset !== message.frameCount
+        || JSON.stringify(message.lanes) !== JSON.stringify(expectedIds)
+        || laneWriters.size !== expectedIds.length
+      ) throw workerFailure('completion_contract')
+      for (const laneId of expectedIds) {
         if (cancelled) throw new InferenceCancelled()
-        const bytes = encodeFloat32Wav({ sampleRate: message.sampleRate, planar: lane.channels })
-        await this.stemStore.writeLane(job.resultKey, lane.laneId, bytes)
-        if (cancelled) throw new InferenceCancelled()
-        keys.push(`${job.resultKey}/${lane.laneId}`)
+        const writer = laneWriters.get(laneId)
+        if (writer === undefined) throw workerFailure('completion_lane_contract')
+        await writer.finalize()
       }
       if (cancelled) throw new InferenceCancelled()
-
+      laneWriters.clear()
       terminateWorker()
       settled = true
-      resolveResult(Object.freeze(keys))
+      resolveResult(Object.freeze(expectedIds.map((laneId) => `${job.resultKey}/${laneId}`)))
     }
 
     const start = async (): Promise<void> => {
@@ -128,6 +177,7 @@ export class OnnxWorkerInference implements InferencePort {
         if (cancelled) return
         const decoded = await this.decoder.decode(job.source)
         if (cancelled) return
+        expectedFrameCount = decoded.planarChannels[0].length
 
         worker = this.createWorker()
         worker.onerror = (event) => { void fail(workerFailure(event.message)) }
@@ -159,8 +209,8 @@ export class OnnxWorkerInference implements InferencePort {
             void fail(message.cancelled ? new InferenceCancelled() : workerFailure(message.message))
             return
           }
-          persistence = persist(message)
-          void persistence.catch(fail)
+          persistence = message.kind === 'chunk' ? persistChunk(message) : finalize(message)
+          void persistence.catch((error: unknown) => { void fail(error) })
         }
 
         const message: WorkerJobMessage = {
@@ -192,7 +242,15 @@ export class OnnxWorkerInference implements InferencePort {
         finishing = true
         terminateWorker()
         const persistenceStopped = persistence?.catch(() => undefined) ?? Promise.resolve()
-        void persistenceStopped.then(cleanup).then(() => {
+        const stopAndCleanup = async (): Promise<void> => {
+          let failure: unknown
+          try { await abortWriters() } catch (error) { failure = error }
+          try { await cleanup() } catch (error) {
+            failure = failure === undefined ? error : new AggregateError([failure, error], 'onnx-worker-inference.cleanup_failed')
+          }
+          if (failure !== undefined) throw failure
+        }
+        void persistenceStopped.then(stopAndCleanup).then(() => {
           settled = true
           rejectResult(new InferenceCancelled())
         }, (error: unknown) => {

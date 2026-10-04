@@ -4,6 +4,13 @@
  * `docs/decisions/browser-storage.md` section 2).
  */
 export interface StemStorePort {
+  /** Opens a bounded incremental float32 WAV write; chunks must arrive in frame order. */
+  beginLaneWrite(
+    resultKey: string,
+    laneId: string,
+    sampleRate: number,
+    frameCount: number,
+  ): Promise<StemLaneWriteSession>
   /** Writes one lane's encoded bytes under a result key (`writeLane('stems/track-1', 'vocals', bytes)`). */
   writeLane(resultKey: string, laneId: string, audio: Uint8Array): Promise<void>
   /** Reads back one lane's stored bytes, byte-identical to what was written. Rejects if the lane was never written. */
@@ -14,4 +21,10 @@ export interface StemStorePort {
   exists(resultKey: string): Promise<boolean>
   /** Every key currently stored, for the startup orphan sweep. */
   listResultKeys(): Promise<readonly string[]>
+}
+
+export interface StemLaneWriteSession {
+  writeChunk(planar: readonly Float32Array[]): Promise<void>
+  finalize(): Promise<void>
+  abort(): Promise<void>
 }

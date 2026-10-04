@@ -1,4 +1,4 @@
-import type { StemStorePort } from '../../application/ports/stem-store-port'
+import type { StemLaneWriteSession, StemStorePort } from '../../application/ports/stem-store-port'
 
 const DEFAULT_ROOT_DIRECTORY_NAME = 'stems'
 const WAV_EXTENSION = '.wav'
@@ -18,6 +18,7 @@ export class StorageQuotaExceededError extends Error {
 }
 
 type CreateWritable = (fileHandle: FileSystemFileHandle) => Promise<FileSystemWritableFileStream>
+type RemoveEntry = (directory: FileSystemDirectoryHandle, name: string) => Promise<void>
 
 export interface OpfsStemStoreOptions {
   /**
@@ -28,15 +29,61 @@ export interface OpfsStemStoreOptions {
    */
   readonly rootDirectoryName?: string
   /**
-   * Overrides how a writable stream is created for `writeLane`, so tests can
+   * Overrides how a writable stream is created for whole-lane and incremental writes, so tests can
    * inject a writable that throws a `QuotaExceededError` DOMException
    * without needing to actually exhaust the origin's storage quota.
    */
   readonly createWritable?: CreateWritable
+  /** Overrides OPFS lane removal so failed-cleanup retries are testable. */
+  readonly removeEntry?: RemoveEntry
 }
 
 function toArrayBuffer(bytes: Uint8Array): ArrayBuffer {
   return bytes.buffer.slice(bytes.byteOffset, bytes.byteOffset + bytes.byteLength) as ArrayBuffer
+}
+
+function createWavHeader(sampleRate: number, frameCount: number): Uint8Array {
+  const header = new Uint8Array(44)
+  const view = new DataView(header.buffer)
+  const dataBytes = frameCount * 2 * 4
+  if (!Number.isSafeInteger(dataBytes) || dataBytes > 0xffff_ffff - 36 || sampleRate * 8 > 0xffff_ffff) {
+    throw new Error('opfs-stem-store.wav_size_limit')
+  }
+  const text = (offset: number, value: string): void => {
+    for (let index = 0; index < value.length; index += 1) header[offset + index] = value.charCodeAt(index)
+  }
+  text(0, 'RIFF')
+  view.setUint32(4, 36 + dataBytes, true)
+  text(8, 'WAVE')
+  text(12, 'fmt ')
+  view.setUint32(16, 16, true)
+  view.setUint16(20, 3, true)
+  view.setUint16(22, 2, true)
+  view.setUint32(24, sampleRate, true)
+  view.setUint32(28, sampleRate * 8, true)
+  view.setUint16(32, 8, true)
+  view.setUint16(34, 32, true)
+  text(36, 'data')
+  view.setUint32(40, dataBytes, true)
+  return header
+}
+
+function encodeStereoChunk(planar: readonly Float32Array[]): Uint8Array {
+  if (planar.length !== 2 || planar[0].length !== planar[1].length) {
+    throw new Error('opfs-stem-store.invalid_chunk_shape')
+  }
+  const bytes = new Uint8Array(planar[0].length * 8)
+  const view = new DataView(bytes.buffer)
+  let offset = 0
+  for (let frame = 0; frame < planar[0].length; frame += 1) {
+    const left = planar[0][frame]
+    const right = planar[1][frame]
+    if (!Number.isFinite(left) || !Number.isFinite(right)) throw new Error('opfs-stem-store.non_finite_sample')
+    view.setFloat32(offset, left, true)
+    view.setFloat32(offset + 4, right, true)
+    offset += 8
+  }
+  return bytes
 }
 
 function splitKey(key: string): readonly string[] {
@@ -73,11 +120,13 @@ async function getDirectory(
 export class OpfsStemStore implements StemStorePort {
   private readonly rootDirectoryName: string
   private readonly createWritableOverride: CreateWritable | undefined
+  private readonly removeEntryOverride: RemoveEntry | undefined
   private rootHandle: Promise<FileSystemDirectoryHandle> | undefined
 
   constructor(options: OpfsStemStoreOptions = {}) {
     this.rootDirectoryName = options.rootDirectoryName ?? DEFAULT_ROOT_DIRECTORY_NAME
     this.createWritableOverride = options.createWritable
+    this.removeEntryOverride = options.removeEntry
   }
 
   private async root(): Promise<FileSystemDirectoryHandle> {
@@ -103,6 +152,108 @@ export class OpfsStemStore implements StemStorePort {
         throw new StorageQuotaExceededError(resultKey, laneId)
       }
       throw error
+    }
+  }
+
+  async beginLaneWrite(
+    resultKey: string,
+    laneId: string,
+    sampleRate: number,
+    frameCount: number,
+  ): Promise<StemLaneWriteSession> {
+    if (!Number.isSafeInteger(sampleRate) || sampleRate <= 0 || !Number.isSafeInteger(frameCount) || frameCount <= 0) {
+      throw new Error('opfs-stem-store.invalid_stream_shape')
+    }
+    const root = await this.root()
+    const directory = await getDirectory(root, splitKey(resultKey), true)
+    if (directory === undefined) throw new Error(`opfs-stem-store.write_failed:${resultKey}/${laneId}`)
+    const fileHandle = await directory.getFileHandle(`${laneId}${WAV_EXTENSION}`, { create: true })
+    const createWritable = this.createWritableOverride ?? ((handle: FileSystemFileHandle) => handle.createWritable())
+    let writable: FileSystemWritableFileStream | undefined
+    let framesWritten = 0
+    let state: 'open' | 'finalized' | 'aborted' = 'open'
+    let writableAborted = false
+    let cleanupPending = false
+    const removeFile = this.removeEntryOverride
+      ? (): Promise<void> => this.removeEntryOverride!(directory, `${laneId}${WAV_EXTENSION}`)
+      : (): Promise<void> => directory.removeEntry(`${laneId}${WAV_EXTENSION}`)
+    const cleanup = async (): Promise<void> => {
+      if (state === 'aborted') return
+      let abortFailure: unknown
+      if (state === 'open' && writable !== undefined && !writableAborted) {
+        try {
+          await writable.abort()
+          writableAborted = true
+        } catch (error) {
+          abortFailure = error
+        }
+      }
+      let removeFailure: unknown
+      let removed = false
+      try {
+        await removeFile()
+        removed = true
+      } catch (error) {
+        if (error instanceof DOMException && error.name === 'NotFoundError') removed = true
+        else removeFailure = error
+      }
+      if (removed) state = 'aborted'
+      cleanupPending = !removed
+      const cleanupFailures = [abortFailure, removeFailure].filter((error) => error !== undefined)
+      if (cleanupFailures.length === 1) throw cleanupFailures[0]
+      if (cleanupFailures.length > 1) throw new AggregateError(cleanupFailures, 'opfs-stem-store.cleanup_failed')
+    }
+    const mappedError = (error: unknown): unknown => {
+      if (error instanceof DOMException && error.name === 'QuotaExceededError') {
+        return new StorageQuotaExceededError(resultKey, laneId)
+      }
+      return error
+    }
+    const failAndCleanup = async (error: unknown): Promise<never> => {
+      const primaryError = mappedError(error)
+      try {
+        await cleanup()
+      } catch (cleanupError) {
+        throw new AggregateError(
+          [primaryError, cleanupError],
+          'opfs-stem-store.write_and_cleanup_failed',
+          { cause: cleanupError },
+        )
+      }
+      throw primaryError
+    }
+    try {
+      writable = await createWritable(fileHandle)
+      const header = createWavHeader(sampleRate, frameCount)
+      await writable.write(header.buffer as ArrayBuffer)
+    } catch (error) {
+      return failAndCleanup(error)
+    }
+    return {
+      writeChunk: async (planar: readonly Float32Array[]): Promise<void> => {
+        if (state !== 'open' || cleanupPending) throw new Error('opfs-stem-store.stream_not_open')
+        try {
+          const bytes = encodeStereoChunk(planar)
+          if (framesWritten + planar[0].length > frameCount) throw new Error('opfs-stem-store.too_many_frames')
+          await writable!.write(bytes.buffer as ArrayBuffer)
+          framesWritten += planar[0].length
+        } catch (error) {
+          return failAndCleanup(error)
+        }
+      },
+      finalize: async (): Promise<void> => {
+        if (state !== 'open' || cleanupPending) throw new Error('opfs-stem-store.stream_not_open')
+        if (framesWritten !== frameCount) {
+          return failAndCleanup(new Error(`opfs-stem-store.incomplete_stream:${framesWritten}:${frameCount}`))
+        }
+        try {
+          await writable!.close()
+          state = 'finalized'
+        } catch (error) {
+          return failAndCleanup(error)
+        }
+      },
+      abort: cleanup,
     }
   }
 

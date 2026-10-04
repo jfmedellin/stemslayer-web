@@ -1,7 +1,14 @@
 import type * as ort from 'onnxruntime-web/webgpu'
 import { Tensor } from 'onnxruntime-web/webgpu'
 
-import { MODEL_SEGMENT_SAMPLES, processPlanarWindows, type PlanarWindowProcessor, type WindowProgress } from './windowing'
+import {
+  MODEL_SEGMENT_SAMPLES,
+  processPlanarWindows,
+  processPlanarWindowsStreaming,
+  type FinalizedWindowChunk,
+  type PlanarWindowProcessor,
+  type WindowProgress,
+} from './windowing'
 
 /** Rock's own ONNX input/output tensor names (`docs/decisions/weight-mirrors.md`). */
 const MIX_INPUT_NAME = 'mix'
@@ -23,6 +30,17 @@ export interface RockInferenceResult {
   readonly stemCount: number
   readonly channelsPerStem: number
   /** `stemCount` entries, `ROCK_STEM_LANES` order when `stemCount` matches that array's length. */
+  readonly stems: readonly RockStemWaveform[]
+}
+
+export interface RockInferenceShape {
+  readonly stemCount: number
+  readonly channelsPerStem: number
+}
+
+export interface RockInferenceChunk extends FinalizedWindowChunk {
+  readonly stemCount: number
+  readonly channelsPerStem: number
   readonly stems: readonly RockStemWaveform[]
 }
 
@@ -111,7 +129,8 @@ function createFlattenedRockProcessor(
  * `mix` signal: windows it and runs the given already-created session
  * exactly once per window (via `processPlanarWindows`), then de-interleaves
  * the flattened per-window output back into `stemCount` full-length stereo
- * waveforms, one per lane (see `ROCK_STEM_LANES`).
+ * waveforms, one per lane (see `ROCK_STEM_LANES`). The dedicated Worker uses
+ * `runRockInferenceStreaming` so production output never becomes track-sized.
  *
  * `session` must already be open (created via `OnnxSessionManager`); this
  * function only runs windows through it, matching this task's scope: "this
@@ -147,4 +166,36 @@ export async function runRockInference(
   }
 
   return Object.freeze({ stemCount, channelsPerStem, stems: Object.freeze(stems) })
+}
+
+/** Production worker variant: retains only the active overlap window and awaits each chunk consumer. */
+export async function runRockInferenceStreaming(
+  session: ort.InferenceSession,
+  planarMix: readonly Float32Array[],
+  onChunk: (chunk: RockInferenceChunk) => void | Promise<void>,
+  onProgress?: (progress: WindowProgress) => void,
+): Promise<RockInferenceShape> {
+  let stemCount: number | undefined
+  let channelsPerStem: number | undefined
+  const processor = createFlattenedRockProcessor(session, (count, channels) => {
+    stemCount = count
+    channelsPerStem = channels
+  })
+  await processPlanarWindowsStreaming(planarMix, processor, async ({ offset, channels }) => {
+    if (stemCount === undefined || channelsPerStem === undefined) {
+      throw new Error('rock-inference.no_windows_processed No window was run through the session.')
+    }
+    const stems: RockStemWaveform[] = []
+    for (let stem = 0; stem < stemCount; stem += 1) {
+      stems.push(Object.freeze([
+        channels[stem * channelsPerStem],
+        channels[stem * channelsPerStem + 1],
+      ]))
+    }
+    await onChunk({ offset, channels, stemCount, channelsPerStem, stems: Object.freeze(stems) })
+  }, onProgress)
+  if (stemCount === undefined || channelsPerStem === undefined) {
+    throw new Error('rock-inference.no_windows_processed No window was run through the session.')
+  }
+  return Object.freeze({ stemCount, channelsPerStem })
 }
