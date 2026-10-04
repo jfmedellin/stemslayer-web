@@ -43,6 +43,15 @@ async function flushMicrotasks(): Promise<void> {
   await new Promise((resolve) => setTimeout(resolve, 50))
 }
 
+/** Waits for cross-thread AudioWorklet messages without assuming they beat a suspend event. */
+async function waitForCondition(condition: () => boolean, description: string): Promise<void> {
+  const deadline = Date.now() + 2_000
+  while (!condition()) {
+    if (Date.now() >= deadline) throw new Error(`Timed out waiting for ${description}`)
+    await new Promise((resolve) => setTimeout(resolve, 1))
+  }
+}
+
 async function render(context: OfflineAudioContext): Promise<AudioBuffer> {
   await flushMicrotasks()
   return context.startRendering()
@@ -306,6 +315,10 @@ describe('WebAudioEngine against a real AudioWorkletProcessor (OfflineAudioConte
     const suspended = context.suspend((MIXER_PREFETCH_CHUNK_FRAMES * 1.5) / SAMPLE_RATE)
     const rendering = context.startRendering()
     await suspended
+    await waitForCondition(
+      () => frameReads.includes(MIXER_PREFETCH_CHUNK_FRAMES * 4),
+      'the fourth sequential prefetch chunk',
+    )
 
     expect(frameReads).toContain(MIXER_PREFETCH_CHUNK_FRAMES * 4)
     expect(frameReads).not.toContain(MIXER_PREFETCH_CHUNK_FRAMES * 8)
@@ -379,6 +392,10 @@ describe('WebAudioEngine against a real AudioWorkletProcessor (OfflineAudioConte
       const suspended = context.suspend(1_024 / SAMPLE_RATE)
       const rendering = context.startRendering()
       await suspended
+      await waitForCondition(
+        () => progress.some((next) => next.isBuffering === true && next.currentSample === 0),
+        'the worklet buffering progress message',
+      )
 
       expect(progress.some((next) => next.isBuffering === true && next.currentSample === 0)).toBe(true)
       expect(progress.every((next) => next.currentSample === 0)).toBe(true)
