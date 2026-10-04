@@ -31,6 +31,17 @@ The current app is functional in local tests but is not release-ready: lint and 
 
 Strict TDD is enabled by project instruction. For implementation, observe RED → GREEN → REFACTOR with the applicable exact runner (`npm test` for Node or `npm run test:browser` for browser behavior), then run the full checks. Reconfirm configuration on resume. Delivery strategy is `ask-on-risk`; the user selected chained PRs with `stacked-to-main` (each reviewable slice targets `main` in order) as the branch approaches the ~400 authored-line budget. This is a planning heuristic, not a per-task code cap. No push or PR creation is authorized.
 
+## Slice 3 Integration (2026-10-04)
+
+- **Objective and authorized scope:** integrate existing REL-05/REL-06 commits locally on `feat/first-release-slice-03-security-headers`, based on `main` at `5fa40a5281056bd2f68f52640b2267ec6359f486`. PR #33 and #35 are merged; issue #37 is open with `status:approved` (parent-verified). Branch push and PR creation are authorized for the parent; merge is not authorized. This worker performs local operations only.
+- **Route:** delegated direct, existing six-commit integration plus tracker reconciliation; no new source behavior, dependencies, installation, remote operation, or RDD lifecycle. RDD is globally OFF. Strict TDD remains enabled; reuse recorded RED/GREEN evidence and do not manufacture RED for integration.
+- **Delivery:** `stacked-to-main`, slice 3 after merged slice 2; historical source range `322f20f..03eb281`, forecast 262 authored lines plus this reconciliation. Keep total PR diff at or below 400 lines; no size exception granted.
+- **Hosting boundary:** GitHub Pages is the sole selected host and beta is already deployed. `vercel.json` is an unused configuration asset; it does NOT protect GitHub Pages or configure another host. Local Vercel-header tests prove only config-aware loopback behavior, not hosted Pages headers.
+- [ ] **INT-03A:** replay the existing REL-05/REL-06 commits with their code/tests and reconcile this tracker; preserve historical evidence and explicitly distinguish it from current validation.
+- [ ] **INT-03B:** run `npm test`, `npm run test:browser`, `npm run typecheck`, `npm run lint`, `npm run build`, `npm run test:vercel-headers`, and `git diff --check` in foreground; record outcomes before candidate publication.
+- **Engram mirror:** pending for `odd/first-public-release/tasks`; no authoritative registered session identity is available, so no agent-attributed memory write is permitted.
+- **Next step:** complete local integration and validation, then return the clean commit/head and measured diff to the parent. PR notes must repeat the Pages/Vercel limitation. No push, PR, merge, or release is performed by this worker.
+
 ## Work Units
 
 ### Gate A — Make the artifact trustworthy
