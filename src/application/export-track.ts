@@ -12,8 +12,10 @@ export interface ExportTrackEntry {
   readonly laneId: string
   readonly displayName: string
   readonly fileName: string
-  /** The exact stored bytes, never re-decoded/re-encoded (`StemStorePort.readLane`'s own contract). */
-  readonly bytes: Uint8Array
+  readonly sampleRateHz: number
+  readonly sizeBytes: number
+  readonly openStream: () => Promise<ReadableStream<Uint8Array>>
+  readonly openFile: () => Promise<File>
 }
 
 export type ExportTrackResult =
@@ -34,11 +36,9 @@ function fileNameFor(track: Track, laneId: string): string {
 }
 
 /**
- * Reads a track's full stem set for export: reuses `resolveStemProfile`
- * (the same lane-set derivation `separate.ts`/`open-in-mixer.ts` already
- * use) and reads every lane's raw bytes via `StemStorePort.readLane` — the
- * exact bytes `encodeFloat32Wav` wrote at separation time, never
- * re-decoded/re-encoded. This is the entire point of the desktop's "raw
+ * Resolves a track's stem metadata for export without materializing WAV
+ * payloads. Streams reopen the exact bytes `encodeFloat32Wav` wrote at
+ * separation time, never re-decoded/re-encoded. This is the desktop's "raw
  * byte-for-byte copy" export rule (`mixer_controller.py:417-434`'s
  * docstring, quoted in `feature-parity.md`'s Export section).
  *
@@ -58,13 +58,24 @@ export async function exportTrack(trackId: string, deps: ExportTrackDeps): Promi
 
   try {
     const profile = resolveStemProfile(track.profileId)
+    if (deps.stemStore.readLaneInfo === undefined
+      || deps.stemStore.readLaneFile === undefined
+      || deps.stemStore.openLaneStream === undefined) {
+      return Object.freeze({ ok: false, reason: 'stems-unavailable' as const })
+    }
     const results = await Promise.allSettled(profile.lanes.map(async (lane): Promise<ExportTrackEntry> => {
-      const bytes = await deps.stemStore.readLane(track.resultKey, lane.laneId)
+      const [info, file] = await Promise.all([
+        deps.stemStore.readLaneInfo!(track.resultKey, lane.laneId),
+        deps.stemStore.readLaneFile!(track.resultKey, lane.laneId),
+      ])
       return Object.freeze({
         laneId: lane.laneId,
         displayName: lane.displayName,
         fileName: fileNameFor(track, lane.laneId),
-        bytes,
+        sampleRateHz: info.sampleRate,
+        sizeBytes: file.size,
+        openStream: () => deps.stemStore.openLaneStream!(track.resultKey, lane.laneId),
+        openFile: () => deps.stemStore.readLaneFile!(track.resultKey, lane.laneId),
       })
     }))
     const entries = results.flatMap((result) => result.status === 'fulfilled' ? [result.value] : [])
