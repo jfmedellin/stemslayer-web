@@ -293,9 +293,6 @@ describe('WebAudioEngine against a real AudioWorkletProcessor (OfflineAudioConte
     const firstSuspended = context.suspend(
       (MIXER_PREFETCH_CHUNK_FRAMES * 2.5) / SAMPLE_RATE,
     )
-    const beforeWrapSuspended = context.suspend(
-      (frameCount - MIXER_PREFETCH_CHUNK_FRAMES / 2) / SAMPLE_RATE,
-    )
     const rendering = context.startRendering()
     try {
       await firstSuspended
@@ -304,6 +301,9 @@ describe('WebAudioEngine against a real AudioWorkletProcessor (OfflineAudioConte
         'worklet progress after the first interior chunk',
       )
       await waitForCondition(() => frameReads.includes(MIXER_PREFETCH_CHUNK_FRAMES * 4), 'the loop-end prefetch')
+      const beforeWrapSuspended = context.suspend(
+        (frameCount - MIXER_PREFETCH_CHUNK_FRAMES / 2) / SAMPLE_RATE,
+      )
       await context.resume()
       await beforeWrapSuspended
       await waitForCondition(
