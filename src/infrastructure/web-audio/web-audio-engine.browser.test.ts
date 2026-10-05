@@ -350,6 +350,7 @@ describe('WebAudioEngine against a real AudioWorkletProcessor (OfflineAudioConte
     }
 
     await streamingEngine.load(session)
+    await flushMicrotasks()
     streamingEngine.setLaneGain('vocals', 1)
     streamingEngine.setLoopRange(createLoopRange(
       MIXER_PREFETCH_CHUNK_FRAMES * 8,
