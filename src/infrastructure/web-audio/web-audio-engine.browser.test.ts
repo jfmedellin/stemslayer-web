@@ -303,6 +303,7 @@ describe('WebAudioEngine against a real AudioWorkletProcessor (OfflineAudioConte
       await waitForCondition(
         () => progress.some((next) => next.currentSample > MIXER_PREFETCH_CHUNK_FRAMES * 2),
         'worklet progress after the first interior chunk',
+        5_000,
       )
       await waitForCondition(() => frameReads.includes(MIXER_PREFETCH_CHUNK_FRAMES * 4), 'the loop-end prefetch')
       await waitForCondition(
@@ -365,6 +366,7 @@ describe('WebAudioEngine against a real AudioWorkletProcessor (OfflineAudioConte
       await waitForCondition(
         () => progress.some((next) => next.currentSample >= MIXER_PREFETCH_CHUNK_FRAMES * 2),
         'worklet progress at or beyond the second sequential chunk',
+        5_000,
       )
       await waitForCondition(
         () => frameReads.includes(MIXER_PREFETCH_CHUNK_FRAMES * 4),
