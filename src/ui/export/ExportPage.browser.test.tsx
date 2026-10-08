@@ -101,7 +101,7 @@ function clickCheckbox(selector: string): void {
 }
 
 /**
- * Spies on `URL.createObjectURL` to capture every Blob a triggered
+ * Spies on `URL.createObjectURL` to capture every file/blob a triggered
  * `<a download>` actually carries, since a headless test can't observe a
  * completed OS-level file download — this is the standard technique for
  * asserting on `<a download>` payloads without one. Real bytes, from a real
@@ -178,12 +178,14 @@ test('unchecking a lane excludes it from both "Download selected" and the ZIP', 
   const spy = spyCreateObjectURL()
   try {
     clickButton('.export-download-selected')
+    await waitFor(() => spy.blobs.length === BASIC_PROFILE.lanes.length - 1)
     expect(spy.blobs).toHaveLength(3) // every lane except drums
     const downloadedLaneCount = spy.blobs.length
     expect(downloadedLaneCount).toBe(BASIC_PROFILE.lanes.length - 1)
 
     spy.blobs.length = 0
     clickButton('.export-download-zip')
+    await waitFor(() => spy.blobs.length === 1)
     expect(spy.blobs).toHaveLength(1)
     const zipBytes = new Uint8Array(await spy.blobs[0].arrayBuffer())
     const entries = readZip(zipBytes)
@@ -206,6 +208,7 @@ test('the ZIP built from real stems, parsed back, is byte-identical to what is i
   const spy = spyCreateObjectURL()
   try {
     clickButton('.export-download-zip')
+    await waitFor(() => spy.blobs.length === 1)
     expect(spy.blobs).toHaveLength(1)
     const zipBytes = new Uint8Array(await spy.blobs[0].arrayBuffer())
     const entries = readZip(zipBytes)
@@ -230,6 +233,7 @@ test('"Download selected" downloads real, byte-identical bytes per checked lane'
   const spy = spyCreateObjectURL()
   try {
     clickButton('.export-download-selected')
+    await waitFor(() => spy.blobs.length === BASIC_PROFILE.lanes.length)
     expect(spy.blobs).toHaveLength(BASIC_PROFILE.lanes.length)
     for (const [index, lane] of BASIC_PROFILE.lanes.entries()) {
       const expectedBytes = await testDeps.stemStore.readLane('stems/track-1', lane.laneId)
@@ -258,12 +262,14 @@ test('a failed lane is omitted from the visible checklist and both download acti
   const spy = spyCreateObjectURL()
   try {
     clickButton('.export-download-selected')
+    await waitFor(() => spy.blobs.length === 2)
     expect(spy.blobs).toHaveLength(2)
     expect(new Uint8Array(await spy.blobs[0].arrayBuffer())).toEqual(vocals)
     expect(new Uint8Array(await spy.blobs[1].arrayBuffer())).toEqual(bass)
 
     spy.blobs.length = 0
     clickButton('.export-download-zip')
+    await waitFor(() => spy.blobs.length === 1)
     expect(spy.blobs).toHaveLength(1)
     const zipEntries = readZip(new Uint8Array(await spy.blobs[0].arrayBuffer()))
     expect(zipEntries.map(({ fileName, bytes }) => ({ fileName, bytes }))).toEqual([
@@ -336,6 +342,43 @@ test('a rejected catalog read exits loading and shows the existing error alert',
   await waitFor(() => document.querySelector('.export-load-error') !== null)
   expect(document.querySelector('.export-loading')).toBeNull()
   expect(rowsRendered()).toHaveLength(0)
+})
+
+test('a failed temporary ZIP staging request keeps source stems and offers a retryable storage error', async () => {
+  const testDeps = await buildDeps(baseTrack())
+  vi.spyOn(testDeps.stemStore, 'createExportArchive').mockRejectedValue(new Error('storage denied'))
+  renderExportPage(testDeps)
+  await waitFor(() => rowsRendered().length === BASIC_PROFILE.lanes.length)
+
+  clickButton('.export-download-zip')
+
+  await waitFor(() => document.querySelector('.export-zip-error') !== null)
+  expect(document.querySelector('.export-zip-error')?.textContent).toContain('Free storage if needed, then retry.')
+  expect(await testDeps.stemStore.exists('stems/track-1')).toBe(true)
+  expect(document.querySelector('.export-download-zip')?.hasAttribute('disabled')).toBe(false)
+})
+
+test('cancelling a pending ZIP export aborts staging and preserves every source stem', async () => {
+  const testDeps = await buildDeps(baseTrack())
+  const staging = await testDeps.stemStore.createExportArchive()
+  const abort = vi.spyOn(staging, 'abort')
+  vi.spyOn(testDeps.stemStore, 'createExportArchive').mockResolvedValue(staging)
+  vi.spyOn(testDeps.stemStore, 'openLaneStream').mockResolvedValue(new ReadableStream<Uint8Array>({
+    start(controller) {
+      controller.enqueue(new Uint8Array([1, 2, 3, 4]))
+    },
+  }))
+  renderExportPage(testDeps)
+  await waitFor(() => rowsRendered().length === BASIC_PROFILE.lanes.length)
+
+  clickButton('.export-download-zip')
+  await waitFor(() => document.querySelector('.export-cancel-zip') !== null)
+  clickButton('.export-cancel-zip')
+  await waitFor(() => document.querySelector('.export-cancel-zip') === null)
+
+  expect(abort).toHaveBeenCalledOnce()
+  expect(document.querySelector('.export-zip-error')).toBeNull()
+  expect(await testDeps.stemStore.exists('stems/track-1')).toBe(true)
 })
 
 test('a rejected stale load cannot replace a newer track', async () => {

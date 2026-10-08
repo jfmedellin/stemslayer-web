@@ -1,4 +1,4 @@
-import { describe, expect, test } from 'vitest'
+import { describe, expect, test, vi } from 'vitest'
 
 import { exportTrack } from '../../src/application/export-track'
 import { encodeFloat32Wav } from '../../src/domain/audio/float32-wav'
@@ -48,6 +48,10 @@ async function seedReadyTrack(
   }
 }
 
+async function entryBytes(entry: { readonly openFile: () => Promise<File> }): Promise<Uint8Array> {
+  return new Uint8Array(await (await entry.openFile()).arrayBuffer())
+}
+
 describe('exportTrack', () => {
   test('reads every lane of a real ready track byte-identical, named "{title}-{stem}.wav"', async () => {
     const catalog = new InMemoryCatalog()
@@ -71,7 +75,7 @@ describe('exportTrack', () => {
     )
     for (const entry of result.entries) {
       const storedBytes = await stemStore.readLane(basicInput.resultKey, entry.laneId)
-      expect(Array.from(entry.bytes)).toEqual(Array.from(storedBytes))
+      expect(await entryBytes(entry)).toEqual(storedBytes)
     }
   })
 
@@ -111,7 +115,7 @@ describe('exportTrack', () => {
     expect(result.entries.map((entry) => entry.laneId)).toEqual(ROCK_PROFILE.lanes.map((lane) => lane.laneId))
     const guitarCenter = result.entries.find((entry) => entry.laneId === 'guitar_center')
     expect(guitarCenter).toBeDefined()
-    expect(guitarCenter?.bytes.length).toBeGreaterThan(0)
+    expect(guitarCenter?.sizeBytes).toBeGreaterThan(0)
   })
 
   test('refuses cleanly (no throw) for an unknown track', async () => {
@@ -139,8 +143,8 @@ describe('exportTrack', () => {
     if (!result.ok) return
     expect(result.entries.map((entry) => entry.laneId)).toEqual(['vocals', 'bass'])
     expect(result.entries.map((entry) => entry.fileName)).toEqual(['Komorebi-vocals.wav', 'Komorebi-bass.wav'])
-    expect(result.entries[0].bytes).toEqual(vocals)
-    expect(result.entries[1].bytes).toEqual(bass)
+    expect(await entryBytes(result.entries[0])).toEqual(vocals)
+    expect(await entryBytes(result.entries[1])).toEqual(bass)
   })
 
   test('refuses cleanly (no throw) when no lanes can be read', async () => {
@@ -152,5 +156,31 @@ describe('exportTrack', () => {
     const result = await exportTrack('track-basic', { catalog, stemStore })
 
     expect(result).toEqual({ ok: false, reason: 'stems-unavailable' })
+  })
+
+  test('loads export metadata without materializing the stored WAV bytes', async () => {
+    const catalog = new InMemoryCatalog()
+    const stemStore = new InMemoryStemStore()
+    const track = transitionTrack(transitionTrack(createTrack(basicInput), 'processing'), 'ready')
+    await catalog.insert(track)
+    for (const lane of BASIC_PROFILE.lanes) {
+      await stemStore.writeLane(basicInput.resultKey, lane.laneId, laneBytes(toneStereo(0.25)))
+    }
+    const readLaneInfo = vi.spyOn(stemStore, 'readLaneInfo').mockResolvedValue({ sampleRate: SAMPLE_RATE, frameCount: 8 })
+    const readLane = vi.spyOn(stemStore, 'readLane').mockRejectedValue(new Error('whole lane read is forbidden'))
+
+    const result = await exportTrack('track-basic', { catalog, stemStore })
+
+    expect(result.ok).toBe(true)
+    if (!result.ok) return
+    expect(result.entries[0]).toMatchObject({
+      laneId: 'vocals',
+      fileName: 'Komorebi-vocals.wav',
+      sampleRateHz: SAMPLE_RATE,
+      sizeBytes: 108,
+    })
+    expect(result.entries[0]).not.toHaveProperty('bytes')
+    expect(readLaneInfo).toHaveBeenCalledTimes(BASIC_PROFILE.lanes.length)
+    expect(readLane).not.toHaveBeenCalled()
   })
 })

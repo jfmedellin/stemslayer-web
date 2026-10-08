@@ -296,16 +296,15 @@ describe('WebAudioEngine against a real AudioWorkletProcessor (OfflineAudioConte
     const rendering = context.startRendering()
     try {
       await firstSuspended
+      const beforeWrapSuspended = context.suspend(
+        (frameCount - MIXER_PREFETCH_CHUNK_FRAMES / 2) / SAMPLE_RATE,
+      )
+      await context.resume()
       await waitForCondition(
         () => progress.some((next) => next.currentSample > MIXER_PREFETCH_CHUNK_FRAMES * 2),
         'worklet progress after the first interior chunk',
       )
       await waitForCondition(() => frameReads.includes(MIXER_PREFETCH_CHUNK_FRAMES * 4), 'the loop-end prefetch')
-      const beforeWrapSuspended = context.suspend(
-        (frameCount - MIXER_PREFETCH_CHUNK_FRAMES / 2) / SAMPLE_RATE,
-      )
-      await context.resume()
-      await beforeWrapSuspended
       await waitForCondition(
         () => progress.some((next) => next.currentSample > MIXER_PREFETCH_CHUNK_FRAMES * 4),
         'worklet progress before the loop wrap',
@@ -314,6 +313,7 @@ describe('WebAudioEngine against a real AudioWorkletProcessor (OfflineAudioConte
         () => frameReads.filter((startFrame) => startFrame === MIXER_PREFETCH_CHUNK_FRAMES).length > 1,
         'the loop-start refill before the loop wrap',
       )
+      await beforeWrapSuspended
       expect(frameReads).toContain(MIXER_PREFETCH_CHUNK_FRAMES * 4)
       expect(progress.every((next) => next.isBuffering !== true)).toBe(true)
       await context.resume()
