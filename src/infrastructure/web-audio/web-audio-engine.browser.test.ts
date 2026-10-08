@@ -305,9 +305,12 @@ describe('WebAudioEngine against a real AudioWorkletProcessor (OfflineAudioConte
     const firstSuspended = context.suspend(
       (MIXER_PREFETCH_CHUNK_FRAMES * 2.5) / SAMPLE_RATE,
     )
-    const rendering = context.startRendering()
+    let firstSuspensionCompleted = false
+    let renderingCompleted = false
+    const rendering = context.startRendering().finally(() => { renderingCompleted = true })
     try {
       await firstSuspended
+      firstSuspensionCompleted = true
       const beforeWrapSuspended = context.suspend(
         (frameCount - MIXER_PREFETCH_CHUNK_FRAMES / 2) / SAMPLE_RATE,
       )
@@ -316,6 +319,14 @@ describe('WebAudioEngine against a real AudioWorkletProcessor (OfflineAudioConte
         () => progress.some((next) => next.currentSample > MIXER_PREFETCH_CHUNK_FRAMES * 2),
         'worklet progress after the first interior chunk',
         5_000,
+        () => JSON.stringify({
+          contextState: context.state,
+          firstSuspensionCompleted,
+          renderingCompleted,
+          lastProgress: progress.at(-1) ?? null,
+          frameReads,
+          loopWrapped,
+        }),
       )
       await waitForCondition(() => frameReads.includes(MIXER_PREFETCH_CHUNK_FRAMES * 4), 'the loop-end prefetch')
       await waitForCondition(
@@ -378,6 +389,8 @@ describe('WebAudioEngine against a real AudioWorkletProcessor (OfflineAudioConte
     try {
       await suspended
       suspensionCompleted = true
+      const renderCheckpoint = context.suspend((MIXER_PREFETCH_CHUNK_FRAMES * 3.5) / SAMPLE_RATE)
+      await context.resume()
       await waitForCondition(
         () => progress.some((next) => next.currentSample >= MIXER_PREFETCH_CHUNK_FRAMES * 2),
         'worklet progress at or beyond the second sequential chunk',
@@ -394,6 +407,7 @@ describe('WebAudioEngine against a real AudioWorkletProcessor (OfflineAudioConte
         () => frameReads.includes(MIXER_PREFETCH_CHUNK_FRAMES * 4),
         'the fourth sequential prefetch chunk',
       )
+      await renderCheckpoint
 
       expect(frameReads).toContain(MIXER_PREFETCH_CHUNK_FRAMES * 4)
       expect(frameReads).not.toContain(MIXER_PREFETCH_CHUNK_FRAMES * 8)
