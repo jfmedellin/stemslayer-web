@@ -1,10 +1,26 @@
+import { MPEGDecoder } from 'mpg123-decoder'
+
 const TARGET_SAMPLE_RATE = 44_100
 const DEFAULT_SOURCE_CHUNK_BYTES = 16 * 1024
 const PCM_OUTPUT_CHUNK_FRAMES = 16 * 1024
 const MAX_WAV_FORMAT_BYTES = 4096
 
 interface StreamingAudioDecoderOptions {
+  readonly createMpegDecoder?: () => MpegDecoderLike
   readonly sourceChunkBytes?: number
+}
+
+export interface MpegDecodedChunk {
+  readonly channelData: readonly Float32Array[]
+  readonly samplesDecoded: number
+  readonly sampleRate: number
+  readonly errors: readonly unknown[]
+}
+
+export interface MpegDecoderLike {
+  readonly ready: Promise<void>
+  decode(bytes: Uint8Array): MpegDecodedChunk
+  free(): void
 }
 
 interface DecodedInputChunk {
@@ -140,6 +156,62 @@ async function* wavChunks(
   }
 }
 
+async function* mp3Chunks(
+  blob: Blob,
+  createDecoder: () => MpegDecoderLike,
+  chunkBytes: number,
+  signal?: AbortSignal,
+): AsyncGenerator<DecodedInputChunk> {
+  abortIfNeeded(signal)
+  const decoder = createDecoder()
+  try {
+    await decoder.ready
+    let sampleRate: number | undefined
+    for (let offset = 0; offset < blob.size; offset += chunkBytes) {
+      abortIfNeeded(signal)
+      const bytes = await readBytes(blob, offset, Math.min(chunkBytes, blob.size - offset), signal)
+      yield* normalizeMpegOutput(decoder.decode(bytes), (rate) => {
+        if (sampleRate !== undefined && sampleRate !== rate) throw new StreamingAudioDecodeError('mp3_sample_rate_changed')
+        sampleRate = rate
+      })
+    }
+    abortIfNeeded(signal)
+    yield* normalizeMpegOutput(decoder.decode(new Uint8Array()), (rate) => {
+      if (sampleRate !== undefined && sampleRate !== rate) throw new StreamingAudioDecodeError('mp3_sample_rate_changed')
+      sampleRate = rate
+    })
+  } catch (cause) {
+    if (cause instanceof StreamingAudioDecodeError || cause instanceof DOMException) throw cause
+    throw new StreamingAudioDecodeError('mp3_decode_failed', { cause })
+  } finally {
+    decoder.free()
+  }
+}
+
+function* normalizeMpegOutput(
+  decoded: MpegDecodedChunk,
+  checkSampleRate: (sampleRate: number) => void,
+): Generator<DecodedInputChunk> {
+  if (decoded.errors.length > 0) throw new StreamingAudioDecodeError('mp3_corrupt_frame')
+  const [left, right] = decoded.channelData
+  if (!(left instanceof Float32Array) || left.length === 0) return
+  if (decoded.channelData.length > 2 || (decoded.channelData.length === 2 && right?.length !== left.length)) {
+    throw new StreamingAudioDecodeError('unsupported_mp3_channels')
+  }
+  if (!Number.isSafeInteger(decoded.sampleRate) || decoded.sampleRate <= 0 || left.length !== decoded.samplesDecoded) {
+    throw new StreamingAudioDecodeError('invalid_mp3_output')
+  }
+  checkSampleRate(decoded.sampleRate)
+  const actualRight = decoded.channelData.length === 1 ? left : right
+  for (let offset = 0; offset < left.length; offset += PCM_OUTPUT_CHUNK_FRAMES) {
+    const end = Math.min(offset + PCM_OUTPUT_CHUNK_FRAMES, left.length)
+    yield {
+      channels: [left.subarray(offset, end), actualRight.subarray(offset, end)],
+      sampleRate: decoded.sampleRate,
+    }
+  }
+}
+
 async function* resampleToTarget(
   input: AsyncIterable<DecodedInputChunk>,
   signal?: AbortSignal,
@@ -218,9 +290,11 @@ async function* resampleToTarget(
 
 /** Bounded Blob slicing, decoder output, resampling and PCM frame emission for MP3/WAV sources. */
 export class StreamingAudioDecoder {
+  private readonly createMpegDecoder: () => MpegDecoderLike
   private readonly sourceChunkBytes: number
 
   constructor(options: StreamingAudioDecoderOptions = {}) {
+    this.createMpegDecoder = options.createMpegDecoder ?? (() => new MPEGDecoder())
     this.sourceChunkBytes = options.sourceChunkBytes ?? DEFAULT_SOURCE_CHUNK_BYTES
     if (!Number.isSafeInteger(this.sourceChunkBytes) || this.sourceChunkBytes <= 0) {
       throw new Error('streaming-audio-decoder.invalid_chunk_size')
@@ -229,9 +303,13 @@ export class StreamingAudioDecoder {
 
   decode(
     source: Blob,
+    format: 'MP3' | 'WAV' = 'WAV',
     signal?: AbortSignal,
   ): AsyncIterable<readonly [Float32Array, Float32Array]> {
     if (source.size === 0) throw new StreamingAudioDecodeError('empty_audio')
-    return resampleToTarget(wavChunks(source, this.sourceChunkBytes, signal), signal)
+    const decoded = format === 'WAV'
+      ? wavChunks(source, this.sourceChunkBytes, signal)
+      : mp3Chunks(source, this.createMpegDecoder, this.sourceChunkBytes, signal)
+    return resampleToTarget(decoded, signal)
   }
 }
