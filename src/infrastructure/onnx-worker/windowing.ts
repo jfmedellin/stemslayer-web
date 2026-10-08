@@ -291,7 +291,7 @@ export async function processPlanarWindowStream(
       }
 
       const nextOffset = windowOffset + MODEL_WINDOW_STRIDE
-      const flushLength = done || nextOffset >= frameCount ? frameCount - outputBase : nextOffset - outputBase
+      const flushLength = nextOffset >= frameCount ? frameCount - outputBase : nextOffset - outputBase
       for (let start = 0; start < flushLength; start += MODEL_WINDOW_STRIDE) {
         const length = Math.min(MODEL_WINDOW_STRIDE, flushLength - start)
         const finalized = Object.freeze(accumulatedChannels.map((channel) => {

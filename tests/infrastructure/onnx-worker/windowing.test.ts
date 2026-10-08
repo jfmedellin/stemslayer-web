@@ -319,6 +319,32 @@ describe('processPlanarWindows', () => {
     expect(maxError(actual[1], expected[1])).toBeLessThanOrEqual(1e-6)
   })
 
+  test('preserves the later window contribution in an EOF overlap', async () => {
+    const frameCount = MODEL_WINDOW_STRIDE + 1_000
+    const source = new Float32Array(frameCount)
+    source.fill(1, MODEL_WINDOW_STRIDE)
+    const actual = new Float32Array(frameCount)
+    let windowNumber = 0
+
+    async function* chunks(): AsyncIterable<readonly [Float32Array, Float32Array]> {
+      yield [source, source.slice()]
+    }
+
+    await processPlanarWindowStream(chunks(), (window) => {
+      windowNumber += 1
+      const contextValue = window[0][MODEL_SEGMENT_SAMPLES / 2]
+      return [
+        new Float32Array(MODEL_SEGMENT_SAMPLES).fill(contextValue),
+        new Float32Array(MODEL_SEGMENT_SAMPLES).fill(contextValue),
+      ]
+    }, ({ offset, channels }) => {
+      actual.set(channels[0], offset)
+    })
+
+    expect(windowNumber).toBe(2)
+    expect(maxError(actual, independentOverlapAdd(frameCount, [0, 1]))).toBeLessThanOrEqual(1e-6)
+  })
+
   test('splits a short final overlap result into protocol-sized chunks', async () => {
     const frameCount = MODEL_WINDOW_STRIDE + 32
     const source = [signal(frameCount), signal(frameCount, 5)]
