@@ -3,6 +3,7 @@ import { MIXER_FRAME_CHUNK_SIZE } from '../../domain/mixer/mixer'
 
 const DEFAULT_ROOT_DIRECTORY_NAME = 'stems'
 const WAV_EXTENSION = '.wav'
+const EXPORT_READ_CHUNK_BYTES = 64 * 1024
 
 /**
  * Thrown when a write hits the origin's storage quota mid-write (a
@@ -273,6 +274,114 @@ export class OpfsStemStore implements StemStorePort {
         throw new Error(`opfs-stem-store.lane_not_found:${resultKey}/${laneId}`, { cause: error })
       }
       throw error
+    }
+  }
+
+  async readLaneFile(resultKey: string, laneId: string): Promise<File> {
+    return this.laneFile(resultKey, laneId)
+  }
+
+  async openLaneStream(resultKey: string, laneId: string): Promise<ReadableStream<Uint8Array>> {
+    const file = await this.laneFile(resultKey, laneId)
+    let offset = 0
+    return new ReadableStream<Uint8Array>({
+      pull: async (controller) => {
+        if (offset >= file.size) {
+          controller.close()
+          return
+        }
+        const end = Math.min(file.size, offset + EXPORT_READ_CHUNK_BYTES)
+        const bytes = new Uint8Array(await file.slice(offset, end).arrayBuffer())
+        offset = end
+        controller.enqueue(bytes)
+      },
+    })
+  }
+
+  async createExportArchive(): Promise<import('../../application/ports/stem-store-port').ExportArchiveSession> {
+    const root = await this.root()
+    const directory = await root.getDirectoryHandle('.exports', { create: true })
+    const fileName = `export-${crypto.randomUUID()}.zip`
+    const fileHandle = await directory.getFileHandle(fileName, { create: true })
+    const createWritable = this.createWritableOverride ?? ((handle: FileSystemFileHandle) => handle.createWritable())
+    let writable: FileSystemWritableFileStream
+    try {
+      writable = await createWritable(fileHandle)
+    } catch (error) {
+      try {
+        await directory.removeEntry(fileName)
+      } catch (cleanupError) {
+        throw new AggregateError([error, cleanupError], 'opfs-stem-store.export_create_cleanup_failed', { cause: cleanupError })
+      }
+      throw error
+    }
+    let state: 'open' | 'complete' | 'aborted' | 'released' = 'open'
+    let cleanupPromise: Promise<void> | undefined
+    const cleanup = (): Promise<void> => {
+      cleanupPromise ??= directory.removeEntry(fileName).catch((error: unknown) => {
+        if (!(error instanceof DOMException && error.name === 'NotFoundError')) throw error
+      })
+      return cleanupPromise
+    }
+    const abort = async (): Promise<void> => {
+      if (state === 'aborted' || state === 'released') return
+      const wasOpen = state === 'open'
+      state = 'aborted'
+      let abortFailure: unknown
+      if (wasOpen) {
+        try { await writable.abort() } catch (error) { abortFailure = error }
+      }
+      let cleanupFailure: unknown
+      try { await cleanup() } catch (error) { cleanupFailure = error }
+      if (abortFailure !== undefined && cleanupFailure !== undefined) {
+        throw new AggregateError([abortFailure, cleanupFailure], 'opfs-stem-store.export_cleanup_failed')
+      }
+      if (abortFailure !== undefined) throw abortFailure
+      if (cleanupFailure !== undefined) throw cleanupFailure
+    }
+    return {
+      write: async (chunk: Uint8Array): Promise<void> => {
+        if (state !== 'open') throw new Error('opfs-stem-store.export_not_open')
+        try {
+          await writable.write(chunk.slice().buffer as ArrayBuffer)
+        } catch (error) {
+          try { await abort() } catch (cleanupError) {
+            throw new AggregateError([error, cleanupError], 'opfs-stem-store.export_write_cleanup_failed', { cause: cleanupError })
+          }
+          throw error
+        }
+      },
+      complete: async (): Promise<File> => {
+        if (state !== 'open') throw new Error('opfs-stem-store.export_not_open')
+        try {
+          try { await writable.close() } catch (error) {
+            throw new Error('opfs-stem-store.export_close_failed', { cause: error })
+          }
+          state = 'complete'
+          let file: File
+          try { file = await fileHandle.getFile() } catch (error) {
+            throw new Error('opfs-stem-store.export_snapshot_failed', { cause: error })
+          }
+          return file
+        } catch (error) {
+          if (state === 'open') {
+            try { await abort() } catch (cleanupError) {
+              throw new AggregateError([error, cleanupError], 'opfs-stem-store.export_complete_cleanup_failed', { cause: cleanupError })
+            }
+          } else {
+            try { await cleanup() } catch (cleanupError) {
+              throw new AggregateError([error, cleanupError], 'opfs-stem-store.export_complete_cleanup_failed', { cause: cleanupError })
+            }
+          }
+          throw error
+        }
+      },
+      abort,
+      release: async (): Promise<void> => {
+        if (state !== 'complete') return
+        state = 'released'
+        await cleanup()
+      },
     }
   }
 

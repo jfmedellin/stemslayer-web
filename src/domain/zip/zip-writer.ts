@@ -65,9 +65,25 @@ export function crc32(bytes: Uint8Array): number {
   return (crc ^ 0xffffffff) >>> 0
 }
 
+function updateCrc32(crc: number, bytes: Uint8Array): number {
+  let next = crc
+  for (const byte of bytes) next = CRC32_TABLE[(next ^ byte) & 0xff] ^ (next >>> 8)
+  return next
+}
+
 export interface ZipEntryInput {
   readonly fileName: string
   readonly bytes: Uint8Array
+}
+
+export interface ZipStreamEntryInput {
+  readonly fileName: string
+  readonly size: number
+  readonly openStream: () => ReadableStream<Uint8Array> | Promise<ReadableStream<Uint8Array>>
+}
+
+export interface ZipChunkSink {
+  write(chunk: Uint8Array): void | Promise<void>
 }
 
 interface PlacedEntry {
@@ -182,4 +198,87 @@ export function writeZip(entries: readonly ZipEntryInput[]): Uint8Array {
   chunks.push(encodeEndOfCentralDirectory(placed.length, centralDirectorySize, centralDirectoryOffset))
 
   return concat(chunks)
+}
+
+async function crc32Stream(entry: ZipStreamEntryInput, signal?: AbortSignal): Promise<number> {
+  let crc = 0xffffffff
+  let size = 0
+  const reader = (await entry.openStream()).getReader()
+  const abort = (): void => { void reader.cancel(signal?.reason) }
+  signal?.addEventListener('abort', abort, { once: true })
+  try {
+    while (true) {
+      if (signal?.aborted) throw new DOMException('The operation was aborted.', 'AbortError')
+      const result = await reader.read()
+      if (result.done) break
+      if (result.value === undefined) continue
+      size += result.value.length
+      if (size > entry.size) throw new Error('zip-writer.entry_size_mismatch')
+      crc = updateCrc32(crc, result.value)
+    }
+  } finally {
+    signal?.removeEventListener('abort', abort)
+    reader.releaseLock()
+  }
+  if (signal?.aborted) throw new DOMException('The operation was aborted.', 'AbortError')
+  if (size !== entry.size) throw new Error('zip-writer.entry_size_mismatch')
+  return (crc ^ 0xffffffff) >>> 0
+}
+
+/**
+ * Writes a STORED ZIP archive incrementally to a caller-owned sink. Sources
+ * are read twice to calculate CRC-32 before writing the ZIP local header.
+ * Only the current source chunk and small ZIP metadata are retained.
+ */
+export async function writeZipStream(
+  entries: readonly ZipStreamEntryInput[],
+  sink: ZipChunkSink,
+  signal?: AbortSignal,
+): Promise<void> {
+  if (entries.length > 0xffff) throw new Error('zip-writer.entry_count_limit')
+  const placed: PlacedEntry[] = []
+  let offset = 0
+  const write = async (chunk: Uint8Array): Promise<void> => {
+    if (signal?.aborted) throw new DOMException('The operation was aborted.', 'AbortError')
+    if (offset + chunk.length > 0xffff_ffff) throw new Error('zip-writer.archive_size_limit')
+    await sink.write(chunk)
+    offset += chunk.length
+  }
+
+  for (const entry of entries) {
+    if (!Number.isSafeInteger(entry.size) || entry.size < 0 || entry.size > 0xffff_ffff) {
+      throw new Error('zip-writer.size_limit')
+    }
+    const fileNameBytes = new TextEncoder().encode(entry.fileName)
+    if (fileNameBytes.length > 0xffff) throw new Error('zip-writer.file_name_limit')
+    const crc = await crc32Stream(entry, signal)
+    const localHeaderOffset = offset
+    await write(encodeLocalFileHeader(fileNameBytes, crc, entry.size))
+    placed.push({ fileNameBytes, crc, size: entry.size, localHeaderOffset })
+
+    let written = 0
+    const reader = (await entry.openStream()).getReader()
+    const abort = (): void => { void reader.cancel(signal?.reason) }
+    signal?.addEventListener('abort', abort, { once: true })
+    try {
+      while (true) {
+        if (signal?.aborted) throw new DOMException('The operation was aborted.', 'AbortError')
+        const result = await reader.read()
+        if (result.done) break
+        if (result.value === undefined) continue
+        written += result.value.length
+        if (written > entry.size) throw new Error('zip-writer.entry_size_mismatch')
+        await write(result.value)
+      }
+    } finally {
+      signal?.removeEventListener('abort', abort)
+      reader.releaseLock()
+    }
+    if (written !== entry.size) throw new Error('zip-writer.entry_size_mismatch')
+  }
+
+  const centralDirectoryOffset = offset
+  for (const entry of placed) await write(encodeCentralFileHeader(entry))
+  const centralDirectorySize = offset - centralDirectoryOffset
+  await write(encodeEndOfCentralDirectory(placed.length, centralDirectorySize, centralDirectoryOffset))
 }
