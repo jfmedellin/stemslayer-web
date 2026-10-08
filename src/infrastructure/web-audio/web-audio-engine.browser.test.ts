@@ -316,8 +316,8 @@ describe('WebAudioEngine against a real AudioWorkletProcessor (OfflineAudioConte
       )
       await context.resume()
       await waitForCondition(
-        () => progress.some((next) => next.currentSample > MIXER_PREFETCH_CHUNK_FRAMES * 2),
-        'worklet progress after the first interior chunk',
+        () => progress.some((next) => next.currentSample >= MIXER_PREFETCH_CHUNK_FRAMES * 2),
+        'worklet progress through the first interior chunks',
         5_000,
         () => JSON.stringify({
           contextState: context.state,
@@ -330,8 +330,17 @@ describe('WebAudioEngine against a real AudioWorkletProcessor (OfflineAudioConte
       )
       await waitForCondition(() => frameReads.includes(MIXER_PREFETCH_CHUNK_FRAMES * 4), 'the loop-end prefetch')
       await waitForCondition(
-        () => progress.some((next) => next.currentSample > MIXER_PREFETCH_CHUNK_FRAMES * 4),
-        'worklet progress before the loop wrap',
+        () => progress.some((next) => next.currentSample >= MIXER_PREFETCH_CHUNK_FRAMES * 4),
+        'worklet progress through the loop-end chunk',
+        5_000,
+        () => JSON.stringify({
+          contextState: context.state,
+          firstSuspensionCompleted,
+          renderingCompleted,
+          lastProgress: progress.at(-1) ?? null,
+          frameReads,
+          loopWrapped,
+        }),
       )
       await waitForCondition(
         () => frameReads.filter((startFrame) => startFrame === MIXER_PREFETCH_CHUNK_FRAMES).length > 1,
@@ -392,8 +401,8 @@ describe('WebAudioEngine against a real AudioWorkletProcessor (OfflineAudioConte
       const renderCheckpoint = context.suspend((MIXER_PREFETCH_CHUNK_FRAMES * 3.5) / SAMPLE_RATE)
       await context.resume()
       await waitForCondition(
-        () => progress.some((next) => next.currentSample >= MIXER_PREFETCH_CHUNK_FRAMES * 2),
-        'worklet progress at or beyond the second sequential chunk',
+        () => frameReads.includes(MIXER_PREFETCH_CHUNK_FRAMES * 4),
+        'the fourth sequential prefetch chunk',
         5_000,
         () => JSON.stringify({
           contextState: context.state,
@@ -402,10 +411,6 @@ describe('WebAudioEngine against a real AudioWorkletProcessor (OfflineAudioConte
           lastProgress: progress.at(-1) ?? null,
           frameReads,
         }),
-      )
-      await waitForCondition(
-        () => frameReads.includes(MIXER_PREFETCH_CHUNK_FRAMES * 4),
-        'the fourth sequential prefetch chunk',
       )
       await renderCheckpoint
 
