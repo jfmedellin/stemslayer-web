@@ -48,13 +48,25 @@ async function waitForCondition(
   condition: () => boolean,
   description: string,
   timeoutMs = 2_000,
+  diagnostics?: () => string,
 ): Promise<void> {
   const deadline = Date.now() + timeoutMs
   while (!condition()) {
-    if (Date.now() >= deadline) throw new Error(`Timed out waiting for ${description}`)
+    if (Date.now() >= deadline) {
+      const detail = diagnostics?.()
+      throw new Error(`Timed out waiting for ${description}${detail === undefined ? '' : `; ${detail}`}`)
+    }
     await new Promise((resolve) => setTimeout(resolve, 1))
   }
 }
+
+describe('waitForCondition diagnostics', () => {
+  test('includes supplied state when a condition times out', async () => {
+    await expect(
+      waitForCondition(() => false, 'diagnostic condition', 0, () => 'state=suspended'),
+    ).rejects.toThrow('Timed out waiting for diagnostic condition; state=suspended')
+  })
+})
 
 async function render(context: OfflineAudioContext): Promise<AudioBuffer> {
   await flushMicrotasks()
@@ -360,13 +372,23 @@ describe('WebAudioEngine against a real AudioWorkletProcessor (OfflineAudioConte
     ))
     streamingEngine.play()
     const suspended = context.suspend((MIXER_PREFETCH_CHUNK_FRAMES * 2.5) / SAMPLE_RATE)
-    const rendering = context.startRendering()
+    let suspensionCompleted = false
+    let renderingCompleted = false
+    const rendering = context.startRendering().finally(() => { renderingCompleted = true })
     try {
       await suspended
+      suspensionCompleted = true
       await waitForCondition(
         () => progress.some((next) => next.currentSample >= MIXER_PREFETCH_CHUNK_FRAMES * 2),
         'worklet progress at or beyond the second sequential chunk',
         5_000,
+        () => JSON.stringify({
+          contextState: context.state,
+          suspensionCompleted,
+          renderingCompleted,
+          lastProgress: progress.at(-1) ?? null,
+          frameReads,
+        }),
       )
       await waitForCondition(
         () => frameReads.includes(MIXER_PREFETCH_CHUNK_FRAMES * 4),
