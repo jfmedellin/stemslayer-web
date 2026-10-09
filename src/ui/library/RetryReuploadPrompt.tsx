@@ -5,7 +5,7 @@ export interface RetryReuploadPromptProps {
   readonly onCancel: () => void
 }
 
-const ACCEPTED_EXTENSIONS = '.wav,.mp3,.flac,.ogg,.m4a'
+const ACCEPTED_EXTENSIONS = '.wav,.mp3'
 
 /**
  * The app never keeps a standing handle back to the original file
@@ -24,7 +24,7 @@ export function RetryReuploadPrompt({ onFileChosen, onCancel }: RetryReuploadPro
 
   return (
     <div className="retry-reupload-prompt" role="group" aria-label="Choose the original file to retry">
-      <p className="retry-reupload-instructions">Choose the original audio file to retry this track.</p>
+      <p className="retry-reupload-instructions">Choose the original WAV or MP3 file to retry this track.</p>
       <input
         ref={inputRef}
         type="file"

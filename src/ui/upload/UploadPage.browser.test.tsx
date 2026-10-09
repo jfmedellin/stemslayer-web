@@ -147,6 +147,19 @@ test('choosing a file through the browse input loads it the same way as a drop',
   expect(document.querySelector('.file-card-name')?.textContent).toBe('browsed.wav')
 })
 
+test('accepts MP3 uploads', async () => {
+  await renderUploadPage()
+  const zone = document.querySelector('.drop-zone')
+  if (zone === null) throw new Error('drop zone not found')
+  const file = buildControlledFile('browsed.mp3', 4, 3)
+
+  dropFiles(zone, [file.file])
+  await waitFor(() => document.querySelector('.file-card-name')?.textContent === 'browsed.mp3')
+
+  expect(file.arrayBuffer).toHaveBeenCalledOnce()
+  expect(document.querySelector('.drop-zone-rejection')).toBeNull()
+})
+
 test('the browse input is outside the interactive drop zone while keyboard browse remains available', async () => {
   await renderUploadPage()
   const zone = document.querySelector<HTMLElement>('.drop-zone')
@@ -166,8 +179,9 @@ test('the browse input is outside the interactive drop zone while keyboard brows
 test('the drop zone accessible name includes the visible file constraints', async () => {
   await renderUploadPage()
   expect(page.getByRole('button', {
-    name: /Drop one audio file or browse.*WAV, MP3, FLAC, OGG, M4A.*one file at a time/i,
+    name: /Drop one audio file or browse.*WAV or MP3.*one file at a time/i,
   }).length).toBe(1)
+  expect(document.querySelector<HTMLInputElement>('input[type="file"]')?.accept).toBe('.wav,.mp3')
 })
 
 test.each([
@@ -224,6 +238,7 @@ test('loads a real five-minute WAV at the duration cap and keeps the upload UI r
 
 test.each([
   ['unsupported.txt', 4, 2, /supported audio format/i],
+  ['unsupported.flac', 4, 2, /supported audio format/i],
   ['empty.wav', 0, 2, /empty/i],
   ['malformed.wav', 4, null, /could not be decoded/i],
 ])('rejects unsupported, empty, or malformed input: %s', async (name, size, durationSeconds, message) => {
@@ -233,11 +248,14 @@ test.each([
   const file = buildControlledFile(name, size, durationSeconds)
 
   dropFiles(zone, [file.file])
-  await new Promise((resolve) => setTimeout(resolve, 0))
+  await waitFor(() => document.querySelector('.drop-zone-rejection') !== null
+    || document.querySelector('.file-card') !== null)
 
-  expect(document.querySelector('.drop-zone-rejection')?.textContent).toMatch(message)
+  expect(file.arrayBuffer).toHaveBeenCalledTimes(
+    name === 'unsupported.txt' || name === 'unsupported.flac' || size === 0 ? 0 : 1,
+  )
+  expect(document.querySelector('.drop-zone-rejection')?.textContent ?? '').toMatch(message)
   expect(document.querySelector('.file-card')).toBeNull()
-  expect(file.arrayBuffer).toHaveBeenCalledTimes(name === 'unsupported.txt' || size === 0 ? 0 : 1)
 })
 
 test('rejects empty bytes returned by a non-empty file read', async () => {

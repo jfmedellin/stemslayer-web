@@ -9,7 +9,7 @@ public deployment or release is claimed here.
 
 1. Start the development server using the commands below and open the local URL
    printed by Vite.
-2. On **Upload**, drop or browse for one WAV, MP3, FLAC, OGG, or M4A file. Choose
+2. On **Upload**, drop or browse for one WAV or MP3 file. Choose
    **Basic** (four stems) or **Rock** (six stems), then start separation. The
    selected model may need to download before processing begins.
 3. In **Library**, follow progress and open a ready track in **Mixer**. Library
@@ -54,6 +54,9 @@ npm run build
   preferred when available, with a WASM fallback that may be slower.
 - The model download and stored stems require substantial browser storage.
   Separation may be refused when available quota is insufficient.
+- Upload and retry accept WAV and MP3 only. Source files remain limited to 100 MiB
+  and five minutes; storage, browser support, and device performance may impose
+  additional limits.
 - Browser storage is not a backup. It may be cleared manually or evicted; Safari
   may delete site data after seven days without a visit. Download stems you want
   to keep. Retrying a failed or interrupted track may require selecting the

@@ -1,4 +1,4 @@
-import { afterEach, expect, test } from 'vitest'
+import { afterEach, expect, test, vi } from 'vitest'
 import { flushSync } from 'react-dom'
 import { createRoot, type Root } from 'react-dom/client'
 import type { SeparateProgressEvent } from '../../application/separate'
@@ -267,32 +267,65 @@ test('cancel shows the exact confirm-dialog copy and only cancels on "Cancel job
   await waitFor(async () => (await testDeps.catalog.getById('preparing-1'))?.status === 'interrupted')
 })
 
-test('retry re-prompts for the file, then retries and enqueues into the shared queue, reaching ready', async () => {
+test.each(['wav', 'mp3'])(
+  'retry accepts %s, then retries and enqueues into the shared queue, reaching ready',
+  async (format) => {
+    const testDeps = await buildSettledDeps()
+    const bytes = new Uint8Array([9, 9, 9, 9])
+    const sourceHash = await new FakeHash().sha256(bytes)
+    const track = baseTrack({
+      trackId: 'failed-1', status: 'failed', errorDetail: 'boom Retry from the original audio.', sourceHash,
+    })
+    await testDeps.catalog.insert(track)
+
+    const laneKeys = expectedLaneKeys(track)
+    testDeps.inference.scriptSuccess('failed-1', laneKeys)
+
+    renderLibrary(testDeps)
+    await waitFor(() => document.querySelectorAll('.track-row').length === 1)
+
+    clickButton(document, '.track-row-retry')
+    const input = document.querySelector<HTMLInputElement>('.retry-reupload-input')
+    if (input === null) throw new Error('retry file input not found')
+    expect(input.accept).toBe('.wav,.mp3')
+
+    const dataTransfer = new DataTransfer()
+    dataTransfer.items.add(new File([bytes], `song.${format}`, {
+      type: format === 'wav' ? 'audio/wav' : 'audio/mpeg',
+    }))
+    Object.defineProperty(input, 'files', { value: dataTransfer.files, configurable: true })
+    input.dispatchEvent(new Event('change', { bubbles: true }))
+
+    await waitFor(async () => (await testDeps.catalog.getById('failed-1'))?.status === 'ready')
+    expect(laneKeys.every((key) => testDeps.stemStore.has(key))).toBe(true)
+  },
+)
+
+test('retry rejects unsupported formats before reading or queueing them', async () => {
   const testDeps = await buildSettledDeps()
-  const bytes = new Uint8Array([9, 9, 9, 9])
-  const sourceHash = await new FakeHash().sha256(bytes)
-  const track = baseTrack({
-    trackId: 'failed-1', status: 'failed', errorDetail: 'boom Retry from the original audio.', sourceHash,
-  })
+  const track = baseTrack({ trackId: 'failed-1', status: 'failed' })
   await testDeps.catalog.insert(track)
-
-  const laneKeys = expectedLaneKeys(track)
-  testDeps.inference.scriptSuccess('failed-1', laneKeys)
-
   renderLibrary(testDeps)
   await waitFor(() => document.querySelectorAll('.track-row').length === 1)
 
   clickButton(document, '.track-row-retry')
   const input = document.querySelector<HTMLInputElement>('.retry-reupload-input')
   if (input === null) throw new Error('retry file input not found')
-
+  const file = new File([new Uint8Array([1, 2, 3])], 'song.flac', { type: 'audio/flac' })
+  const arrayBuffer = vi.spyOn(file, 'arrayBuffer')
+  const enqueue = vi.spyOn(testDeps.deps.separationQueue, 'enqueue')
   const dataTransfer = new DataTransfer()
-  dataTransfer.items.add(new File([bytes], 'song.wav', { type: 'audio/wav' }))
+  dataTransfer.items.add(file)
   Object.defineProperty(input, 'files', { value: dataTransfer.files, configurable: true })
   input.dispatchEvent(new Event('change', { bubbles: true }))
 
-  await waitFor(async () => (await testDeps.catalog.getById('failed-1'))?.status === 'ready')
-  expect(laneKeys.every((key) => testDeps.stemStore.has(key))).toBe(true)
+  await waitFor(() => arrayBuffer.mock.calls.length > 0
+    || rowFor('failed-1')?.querySelector('.track-row-error') !== null)
+  expect(arrayBuffer).not.toHaveBeenCalled()
+  expect(enqueue).not.toHaveBeenCalled()
+  expect((await testDeps.catalog.getById('failed-1'))?.status).toBe('failed')
+  expect(input.accept).toBe('.wav,.mp3')
+  expect(rowFor('failed-1')?.querySelector('.track-row-error')?.textContent ?? '').toMatch(/WAV or MP3/i)
 })
 
 test('retry shows the identity-owned refusal inline instead of silently failing', async () => {

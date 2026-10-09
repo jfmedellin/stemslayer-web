@@ -9,6 +9,7 @@ import type { SeparateProgressEvent } from '../../application/separate'
 import type { SeparationQueue } from '../../application/separation-queue'
 import type { Track } from '../../domain/track'
 import type { StartupSweepGuard } from '../app-dependencies'
+import { parseAudioFileFormat } from '../upload/parse-audio-file-format'
 import { CancelConfirmDialog } from './CancelConfirmDialog'
 import { filterTracksBySearch, sortTracks, type LibrarySortKey } from './filter-sort-tracks'
 import { RemoveConfirmDialog } from './RemoveConfirmDialog'
@@ -114,6 +115,12 @@ export function LibraryPage({
   }
 
   async function handleRetryFileChosen(trackId: string, file: File): Promise<void> {
+    const format = parseAudioFileFormat(file.name)
+    if (format !== 'WAV' && format !== 'MP3') {
+      setRowError(trackId, 'Choose a WAV or MP3 file to retry this track.')
+      return
+    }
+
     const bytes = new Uint8Array(await file.arrayBuffer())
     const result = await retryTrack(trackId, deps, { bytes })
 
