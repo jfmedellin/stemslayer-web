@@ -271,15 +271,11 @@ describe('WebAudioEngine against a real AudioWorkletProcessor (OfflineAudioConte
     const context = new OfflineAudioContext(2, frameCount + MIXER_PREFETCH_CHUNK_FRAMES, SAMPLE_RATE)
     const streamingEngine = new WebAudioEngine({ context })
     const progress: Array<{ currentSample: number; isPlaying: boolean; isBuffering?: boolean }> = []
-    let previousSample = 0
-    let loopWrapped = false
-    streamingEngine.onProgress((next) => {
-      if (next.currentSample < previousSample && previousSample >= frameCount - MIXER_PREFETCH_CHUNK_FRAMES) {
-        loopWrapped = true
-      }
-      previousSample = next.currentSample
-      progress.push(next)
-    })
+    streamingEngine.onProgress((next) => progress.push(next))
+    const loopStartSignature = Float32Array.from(
+      { length: 32 },
+      (_unused, index) => 0.6 + index / 100,
+    )
     const session: MixerSession = {
       trackId: 'long-loop-track',
       sampleRate: SAMPLE_RATE,
@@ -290,7 +286,12 @@ describe('WebAudioEngine against a real AudioWorkletProcessor (OfflineAudioConte
         frameReads.push(startFrame)
         const channel = Float32Array.from(
           { length: count },
-          (_unused, offset) => 0.05 + ((startFrame + offset) % 1_000) / 10_000,
+          (_unused, offset) => {
+            const sourceFrame = startFrame + offset
+            return sourceFrame < loopStartSignature.length
+              ? loopStartSignature[sourceFrame]
+              : 0.05 + (sourceFrame % 1_000) / 10_000
+          },
         )
         return [[channel, channel.slice()]]
       },
@@ -299,8 +300,6 @@ describe('WebAudioEngine against a real AudioWorkletProcessor (OfflineAudioConte
     await streamingEngine.load(session)
     await flushMicrotasks()
     progress.length = 0
-    previousSample = 0
-    loopWrapped = false
     streamingEngine.setLaneGain('vocals', 1)
     streamingEngine.setMasterGain(1)
     streamingEngine.setLoopRange(createLoopRange(0, frameCount, frameCount))
@@ -328,12 +327,9 @@ describe('WebAudioEngine against a real AudioWorkletProcessor (OfflineAudioConte
           renderingCompleted,
           lastProgress: progress.at(-1) ?? null,
           frameReads,
-          loopWrapped,
         }),
       )
-      expect(loopWrapped).toBe(false)
       await beforeWrapSuspended
-      expect(loopWrapped).toBe(false)
       expect(frameReads).toContain(MIXER_PREFETCH_CHUNK_FRAMES * 4)
       expect(progress.every((next) => next.isBuffering !== true)).toBe(true)
       await context.resume()
@@ -350,10 +346,17 @@ describe('WebAudioEngine against a real AudioWorkletProcessor (OfflineAudioConte
       expect(frameReads).toContain(MIXER_PREFETCH_CHUNK_FRAMES * 4)
       expect(frameReads).toContain(0)
       expect([...left.slice(wrapWindowStart, wrapWindowEnd)].every((sample) => sample > 0.04)).toBe(true)
-      // OfflineAudioContext output can begin with silence while async range
-      // prefetch settles, so the initial output is not a valid loop reference.
-      // Assert audible output at the boundary above and the cursor wrap below.
-      expect(loopWrapped).toBe(true)
+      // Count a source-derived signature instead of relying on cross-thread
+      // progress callbacks, which can be delayed until OfflineAudioContext ends.
+      // It is unique to loop-start frames, so a second occurrence proves wrap.
+      const loopStartOccurrences: number[] = []
+      for (let sampleIndex = 0; sampleIndex <= left.length - loopStartSignature.length; sampleIndex += 1) {
+        const matchesSignature = loopStartSignature.every((sample, offset) =>
+          Math.abs(left[sampleIndex + offset] - sample) < 0.00001,
+        )
+        if (matchesSignature) loopStartOccurrences.push(sampleIndex)
+      }
+      expect(loopStartOccurrences).toHaveLength(2)
       expect(progress.every((next) => next.isBuffering !== true)).toBe(true)
     } finally {
       await context.resume().catch(() => undefined)
