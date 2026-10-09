@@ -25,6 +25,41 @@ async function collect(
 }
 
 describe('StreamingAudioDecoder', () => {
+  test('measures WAV duration by counting source frames across bounded byte chunks', async () => {
+    const samples = Float32Array.from({ length: 64 }, (_unused, index) => index / 64)
+    const wav = encodeFloat32Wav({ sampleRate: 8_000, planar: [samples, samples] })
+    const source = new Blob([wav.slice().buffer as ArrayBuffer])
+    const slice = vi.spyOn(source, 'slice')
+    const decoder = new StreamingAudioDecoder({ sourceChunkBytes: 32 })
+
+    const duration = await decoder.measureDuration(source, 'WAV')
+
+    expect(duration).toBe(64 / 8_000)
+    const payloadReads = slice.mock.calls.filter(([start]) => (start ?? 0) >= 44)
+    expect(payloadReads.length).toBeGreaterThan(1)
+    expect(payloadReads.every(([start, end]) => (end ?? 0) - (start ?? 0) <= 32)).toBe(true)
+  })
+
+  test('measures MP3 duration from decoded source frames without resampling', async () => {
+    const decoderFree = vi.fn()
+    const codecDecode = vi.fn((bytes: Uint8Array) => {
+      const frames = bytes.length * 100
+      const channel = new Float32Array(frames)
+      return { channelData: [channel], samplesDecoded: frames, sampleRate: 48_000, errors: [] }
+    })
+    const source = new Blob([new Uint8Array(10).buffer as ArrayBuffer])
+    const decoder = new StreamingAudioDecoder({
+      sourceChunkBytes: 4,
+      createMpegDecoder: () => ({ ready: Promise.resolve(), decode: codecDecode, free: decoderFree }),
+    })
+
+    const duration = await decoder.measureDuration(source, 'MP3')
+
+    expect(duration).toBe(1_000 / 48_000)
+    expect(codecDecode.mock.calls.map(([bytes]) => bytes.length)).toEqual([4, 4, 2, 0])
+    expect(decoderFree).toHaveBeenCalledOnce()
+  })
+
   test('decodes float WAV incrementally into ordered stereo target-rate frames', async () => {
     const left = Float32Array.from({ length: 20_000 }, (_unused, index) => index / 20_000)
     const right = Float32Array.from({ length: 20_000 }, (_unused, index) => -index / 20_000)

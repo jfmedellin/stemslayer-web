@@ -188,6 +188,18 @@ async function* mp3Chunks(
   }
 }
 
+function decodeInputChunks(
+  source: Blob,
+  format: 'MP3' | 'WAV',
+  createMpegDecoder: () => MpegDecoderLike,
+  sourceChunkBytes: number,
+  signal?: AbortSignal,
+): AsyncIterable<DecodedInputChunk> {
+  return format === 'WAV'
+    ? wavChunks(source, sourceChunkBytes, signal)
+    : mp3Chunks(source, createMpegDecoder, sourceChunkBytes, signal)
+}
+
 function* normalizeMpegOutput(
   decoded: MpegDecodedChunk,
   checkSampleRate: (sampleRate: number) => void,
@@ -307,9 +319,27 @@ export class StreamingAudioDecoder {
     signal?: AbortSignal,
   ): AsyncIterable<readonly [Float32Array, Float32Array]> {
     if (source.size === 0) throw new StreamingAudioDecodeError('empty_audio')
-    const decoded = format === 'WAV'
-      ? wavChunks(source, this.sourceChunkBytes, signal)
-      : mp3Chunks(source, this.createMpegDecoder, this.sourceChunkBytes, signal)
+    const decoded = decodeInputChunks(source, format, this.createMpegDecoder, this.sourceChunkBytes, signal)
     return resampleToTarget(decoded, signal)
+  }
+
+  async measureDuration(source: Blob, format: 'MP3' | 'WAV', signal?: AbortSignal): Promise<number> {
+    if (source.size === 0) throw new StreamingAudioDecodeError('empty_audio')
+    const decoded = decodeInputChunks(source, format, this.createMpegDecoder, this.sourceChunkBytes, signal)
+    let frameCount = 0
+    let sampleRate: number | undefined
+    for await (const chunk of decoded) {
+      if (sampleRate !== undefined && sampleRate !== chunk.sampleRate) {
+        throw new StreamingAudioDecodeError('sample_rate_changed')
+      }
+      sampleRate = chunk.sampleRate
+      const chunkFrames = chunk.channels[0].length
+      if (chunk.channels[1].length !== chunkFrames || !Number.isSafeInteger(frameCount + chunkFrames)) {
+        throw new StreamingAudioDecodeError('invalid_duration_frame_count')
+      }
+      frameCount += chunkFrames
+    }
+    if (frameCount === 0 || sampleRate === undefined) throw new StreamingAudioDecodeError('empty_audio')
+    return frameCount / sampleRate
   }
 }
