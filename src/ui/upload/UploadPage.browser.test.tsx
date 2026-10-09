@@ -3,6 +3,7 @@ import { page, userEvent } from 'vitest/browser'
 import { flushSync } from 'react-dom'
 import { createRoot, type Root } from 'react-dom/client'
 import { expectedLaneKeys } from '../../application/separation-lane-keys'
+import { StreamingAudioDecoder } from '../../infrastructure/onnx-worker/streaming-audio-decoder'
 import { BASIC_PROFILE, ROCK_PROFILE } from '../../domain/stem-profile'
 import { buildFakeAppDependencies, type FakeAppDependencies } from '../../../tests/fakes/build-fake-app-dependencies'
 import { UploadPage } from './UploadPage'
@@ -13,6 +14,7 @@ let container: HTMLDivElement
 afterEach(() => {
   root.unmount()
   vi.unstubAllGlobals()
+  vi.restoreAllMocks()
 })
 
 function buildWavFile(name: string, durationSeconds: number): File {
@@ -54,8 +56,6 @@ function chooseFilesViaInput(input: HTMLInputElement, files: readonly File[]): v
 }
 
 const MAX_SOURCE_BYTES = 100 * 1024 * 1024
-const MAX_DURATION_SECONDS = 5 * 60
-
 function buildControlledFile(
   name: string,
   size: number,
@@ -64,13 +64,9 @@ function buildControlledFile(
   const file = new File([new Uint8Array([1, 2, 3, 4])], name)
   Object.defineProperty(file, 'size', { value: size })
   const arrayBuffer = vi.spyOn(file, 'arrayBuffer').mockResolvedValue(new Uint8Array([1, 2, 3, 4]).buffer)
-  vi.stubGlobal('AudioContext', class {
-    async decodeAudioData(): Promise<{ duration: number }> {
-      if (durationSeconds === null) throw new Error('decode failed')
-      return { duration: durationSeconds }
-    }
-
-    async close(): Promise<void> {}
+  vi.spyOn(StreamingAudioDecoder.prototype, 'measureDuration').mockImplementation(async () => {
+    if (durationSeconds === null) throw new Error('decode failed')
+    return durationSeconds
   })
   return { file, arrayBuffer }
 }
@@ -195,35 +191,62 @@ test.each([
   const file = buildControlledFile('boundary.wav', size, 2)
 
   dropFiles(zone, [file.file])
-  await new Promise((resolve) => setTimeout(resolve, 0))
+  await waitFor(() => file.arrayBuffer.mock.calls.length > 0
+    || document.querySelector('.drop-zone-rejection') !== null)
 
   expect(file.arrayBuffer).toHaveBeenCalledTimes(accepted ? 1 : 0)
   expect(document.querySelector('.file-card') !== null).toBe(accepted)
   if (!accepted) expect(document.querySelector('.drop-zone-rejection')?.textContent).toMatch(/100 MiB/i)
 })
 
-test.each([
-  ['below', MAX_DURATION_SECONDS - 1, true],
-  ['at', MAX_DURATION_SECONDS, true],
-  ['above', MAX_DURATION_SECONDS + 1, false],
-])('duration limit accepts %s-boundary media and rejects above', async (_boundary, durationSeconds, accepted) => {
+test('accepts a 20-minute WAV after bounded duration measurement and retains measured metadata', async () => {
   await renderUploadPage()
   const zone = document.querySelector('.drop-zone')
   if (zone === null) throw new Error('drop zone not found')
-  const file = buildControlledFile('duration.wav', 4, durationSeconds)
+  const file = buildControlledFile('duration.wav', 4, 20 * 60)
 
   dropFiles(zone, [file.file])
   await new Promise((resolve) => setTimeout(resolve, 0))
 
-  expect(document.querySelector('.file-card') !== null).toBe(accepted)
-  if (!accepted) expect(document.querySelector('.drop-zone-rejection')?.textContent).toMatch(/5 minutes/i)
+  expect(document.querySelector('.file-card') !== null).toBe(true)
+  expect(document.querySelector('.file-card-details')?.textContent).toContain('20:00')
+  expect(file.arrayBuffer).toHaveBeenCalledOnce()
 })
 
-test('loads a real five-minute WAV at the duration cap and keeps the upload UI responsive', async () => {
+test('measures duration from the File before reading the full file bytes', async () => {
   await renderUploadPage()
   const zone = document.querySelector('.drop-zone')
   if (zone === null) throw new Error('drop zone not found')
-  const file = buildWavFile('five-minute.wav', MAX_DURATION_SECONDS)
+  const file = buildControlledFile('duration.mp3', 4, 615)
+  const measure = vi.mocked(StreamingAudioDecoder.prototype.measureDuration)
+
+  dropFiles(zone, [file.file])
+  await waitFor(() => document.querySelector('.file-card') !== null)
+
+  expect(measure).toHaveBeenCalledBefore(file.arrayBuffer)
+  expect(measure).toHaveBeenCalledWith(file.file, 'MP3')
+})
+
+test('rejects a source larger than 100 MiB before duration measurement or reading', async () => {
+  await renderUploadPage()
+  const zone = document.querySelector('.drop-zone')
+  if (zone === null) throw new Error('drop zone not found')
+  const file = buildControlledFile('oversized.wav', MAX_SOURCE_BYTES + 1, 60)
+
+  dropFiles(zone, [file.file])
+  await waitFor(() => document.querySelector('.drop-zone-rejection') !== null)
+
+  expect(StreamingAudioDecoder.prototype.measureDuration).not.toHaveBeenCalled()
+  expect(file.arrayBuffer).not.toHaveBeenCalled()
+  expect(document.querySelector('.drop-zone-rejection')?.textContent).toMatch(/100 MiB/i)
+})
+
+test('loads a real five-minute WAV and keeps the upload UI responsive', async () => {
+  await renderUploadPage()
+  const zone = document.querySelector('.drop-zone')
+  if (zone === null) throw new Error('drop zone not found')
+  const file = buildWavFile('five-minute.wav', 5 * 60)
+  vi.spyOn(StreamingAudioDecoder.prototype, 'measureDuration').mockResolvedValue(5 * 60)
   const arrayBuffer = vi.spyOn(file, 'arrayBuffer')
 
   dropFiles(zone, [file])
@@ -252,7 +275,7 @@ test.each([
     || document.querySelector('.file-card') !== null)
 
   expect(file.arrayBuffer).toHaveBeenCalledTimes(
-    name === 'unsupported.txt' || name === 'unsupported.flac' || size === 0 ? 0 : 1,
+    name === 'unsupported.txt' || name === 'unsupported.flac' || size === 0 || durationSeconds === null ? 0 : 1,
   )
   expect(document.querySelector('.drop-zone-rejection')?.textContent ?? '').toMatch(message)
   expect(document.querySelector('.file-card')).toBeNull()
@@ -263,6 +286,7 @@ test('rejects empty bytes returned by a non-empty file read', async () => {
   const zone = document.querySelector('.drop-zone')
   if (zone === null) throw new Error('drop zone not found')
   const file = new File([new Uint8Array([1])], 'empty-content.wav')
+  vi.spyOn(StreamingAudioDecoder.prototype, 'measureDuration').mockResolvedValue(1)
   const read = vi.spyOn(file, 'arrayBuffer').mockResolvedValue(new ArrayBuffer(0))
 
   dropFiles(zone, [file])
@@ -273,40 +297,43 @@ test('rejects empty bytes returned by a non-empty file read', async () => {
   expect(document.querySelector('.file-card')).toBeNull()
 })
 
-test('a later selection wins when an earlier file read finishes last', async () => {
+test('a later selection wins when an earlier duration measurement finishes last', async () => {
   await renderUploadPage()
   const zone = document.querySelector('.drop-zone')
   if (zone === null) throw new Error('drop zone not found')
-  let finishFirst: ((buffer: ArrayBuffer) => void) | undefined
+  let finishFirst: ((duration: number) => void) | undefined
+  let measureCount = 0
+  vi.spyOn(StreamingAudioDecoder.prototype, 'measureDuration').mockImplementation(() => {
+    measureCount += 1
+    return measureCount === 1
+      ? new Promise((resolve) => { finishFirst = resolve })
+      : Promise.resolve(2)
+  })
   const first = new File([new Uint8Array([1, 2, 3, 4])], 'first.wav')
-  vi.spyOn(first, 'arrayBuffer').mockImplementation(() => new Promise<ArrayBuffer>((resolve) => { finishFirst = resolve }))
+  const firstRead = vi.spyOn(first, 'arrayBuffer')
   const second = buildControlledFile('second.wav', 4, 2)
 
   dropFiles(zone, [first])
   dropFiles(zone, [second.file])
   await waitFor(() => document.querySelector('.file-card-name')?.textContent === 'second.wav')
-  finishFirst?.(new Uint8Array([1, 2, 3, 4]).buffer)
+  finishFirst?.(2)
   await new Promise((resolve) => setTimeout(resolve, 0))
 
   expect(document.querySelector('.file-card-name')?.textContent).toBe('second.wav')
+  expect(firstRead).not.toHaveBeenCalled()
 })
 
 test('a later selection wins when an earlier metadata decode finishes last', async () => {
   await renderUploadPage()
   const zone = document.querySelector('.drop-zone')
   if (zone === null) throw new Error('drop zone not found')
-  let finishFirstDecode: ((metadata: { duration: number }) => void) | undefined
+  let finishFirstDecode: ((duration: number) => void) | undefined
   let decodeCount = 0
-  vi.stubGlobal('AudioContext', class {
-    decodeAudioData(): Promise<{ duration: number }> {
-      decodeCount += 1
-      if (decodeCount === 1) {
-        return new Promise((resolve) => { finishFirstDecode = resolve })
-      }
-      return Promise.resolve({ duration: 2 })
-    }
-
-    async close(): Promise<void> {}
+  vi.spyOn(StreamingAudioDecoder.prototype, 'measureDuration').mockImplementation(() => {
+    decodeCount += 1
+    return decodeCount === 1
+      ? new Promise((resolve) => { finishFirstDecode = resolve })
+      : Promise.resolve(2)
   })
   const first = new File([new Uint8Array([1, 2, 3, 4])], 'first-decode.wav')
   const second = new File([new Uint8Array([1, 2, 3, 4])], 'second-decode.wav')
@@ -315,7 +342,7 @@ test('a later selection wins when an earlier metadata decode finishes last', asy
   await waitFor(() => decodeCount === 1)
   dropFiles(zone, [second])
   await waitFor(() => document.querySelector('.file-card-name')?.textContent === 'second-decode.wav')
-  finishFirstDecode?.({ duration: 2 })
+  finishFirstDecode?.(2)
   await new Promise((resolve) => setTimeout(resolve, 0))
 
   expect(document.querySelector('.file-card-name')?.textContent).toBe('second-decode.wav')
@@ -330,6 +357,7 @@ test('an unreadable latest selection reports an error without replacing the load
   await waitFor(() => document.querySelector('.file-card-name')?.textContent === 'loaded.wav')
 
   const latest = new File([new Uint8Array([1, 2, 3, 4])], 'broken.wav')
+  vi.spyOn(StreamingAudioDecoder.prototype, 'measureDuration').mockResolvedValue(2)
   const readLatest = vi.spyOn(latest, 'arrayBuffer').mockRejectedValue(new Error('read failed'))
   dropFiles(zone, [latest])
   await waitFor(() => document.querySelector('.drop-zone-rejection') !== null)
@@ -386,6 +414,7 @@ test('the primary action calls addToLibrary with the selected profile and shows 
   const rows = await testDeps.catalog.listAll()
   expect(rows).toHaveLength(1)
   expect(rows[0]?.profileId).toBe(ROCK_PROFILE.profileId)
+  expect(rows[0]?.durationSeconds).toBe(4)
 })
 
 test('a claimed decision actually enqueues a real job into the shared queue, which reaches ready', async () => {

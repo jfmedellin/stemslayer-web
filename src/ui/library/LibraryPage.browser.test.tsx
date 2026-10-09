@@ -3,6 +3,7 @@ import { flushSync } from 'react-dom'
 import { createRoot, type Root } from 'react-dom/client'
 import type { SeparateProgressEvent } from '../../application/separate'
 import { expectedLaneKeys } from '../../application/separation-lane-keys'
+import { StreamingAudioDecoder } from '../../infrastructure/onnx-worker/streaming-audio-decoder'
 import type { Track } from '../../domain/track'
 import {
   buildFakeAppDependencies,
@@ -15,7 +16,10 @@ import '../tokens.css'
 
 let root: Root
 let container: HTMLDivElement
-afterEach(() => root.unmount())
+afterEach(() => {
+  root.unmount()
+  vi.restoreAllMocks()
+})
 
 function baseTrack(overrides: Partial<Track>): Track {
   return {
@@ -290,14 +294,20 @@ test.each(['wav', 'mp3'])(
     expect(input.accept).toBe('.wav,.mp3')
 
     const dataTransfer = new DataTransfer()
-    dataTransfer.items.add(new File([bytes], `song.${format}`, {
+    const file = new File([bytes], `song.${format}`, {
       type: format === 'wav' ? 'audio/wav' : 'audio/mpeg',
-    }))
+    })
+    vi.spyOn(StreamingAudioDecoder.prototype, 'measureDuration').mockResolvedValue(615)
+    const arrayBuffer = vi.spyOn(file, 'arrayBuffer')
+    dataTransfer.items.add(file)
     Object.defineProperty(input, 'files', { value: dataTransfer.files, configurable: true })
     input.dispatchEvent(new Event('change', { bubbles: true }))
 
     await waitFor(async () => (await testDeps.catalog.getById('failed-1'))?.status === 'ready')
     expect(laneKeys.every((key) => testDeps.stemStore.has(key))).toBe(true)
+    expect(arrayBuffer).toHaveBeenCalledOnce()
+    expect(StreamingAudioDecoder.prototype.measureDuration).toHaveBeenCalledBefore(arrayBuffer)
+    expect((await testDeps.catalog.getById('failed-1'))?.durationSeconds).toBe(615)
   },
 )
 
@@ -328,6 +338,30 @@ test('retry rejects unsupported formats before reading or queueing them', async 
   expect(rowFor('failed-1')?.querySelector('.track-row-error')?.textContent ?? '').toMatch(/WAV or MP3/i)
 })
 
+test('retry rejects files over 100 MiB before measuring or reading bytes', async () => {
+  const testDeps = await buildSettledDeps()
+  await testDeps.catalog.insert(baseTrack({ trackId: 'failed-large', status: 'failed' }))
+  renderLibrary(testDeps)
+  await waitFor(() => rowFor('failed-large') !== null)
+
+  clickButton(rowFor('failed-large')!, '.track-row-retry')
+  const input = rowFor('failed-large')!.querySelector<HTMLInputElement>('.retry-reupload-input')
+  if (input === null) throw new Error('retry file input not found')
+  const file = new File([new Uint8Array([1])], 'large.wav')
+  const measure = vi.spyOn(StreamingAudioDecoder.prototype, 'measureDuration')
+  Object.defineProperty(file, 'size', { value: 100 * 1024 * 1024 + 1 })
+  const arrayBuffer = vi.spyOn(file, 'arrayBuffer')
+  const dataTransfer = new DataTransfer()
+  dataTransfer.items.add(file)
+  Object.defineProperty(input, 'files', { value: dataTransfer.files, configurable: true })
+  input.dispatchEvent(new Event('change', { bubbles: true }))
+
+  await waitFor(() => rowFor('failed-large')?.querySelector('.track-row-error') !== null)
+  expect(measure).not.toHaveBeenCalled()
+  expect(arrayBuffer).not.toHaveBeenCalled()
+  expect(rowFor('failed-large')?.querySelector('.track-row-error')?.textContent).toMatch(/100 MiB/i)
+})
+
 test('retry shows the identity-owned refusal inline instead of silently failing', async () => {
   const testDeps = await buildSettledDeps()
   const ownerBytes = new Uint8Array([1, 1, 1])
@@ -346,6 +380,7 @@ test('retry shows the identity-owned refusal inline instead of silently failing'
   const input = rowFor('failed-1')!.querySelector<HTMLInputElement>('.retry-reupload-input')
   if (input === null) throw new Error('retry file input not found')
   const dataTransfer = new DataTransfer()
+  vi.spyOn(StreamingAudioDecoder.prototype, 'measureDuration').mockResolvedValue(615)
   dataTransfer.items.add(new File([ownerBytes], 'song.wav', { type: 'audio/wav' }))
   Object.defineProperty(input, 'files', { value: dataTransfer.files, configurable: true })
   input.dispatchEvent(new Event('change', { bubbles: true }))

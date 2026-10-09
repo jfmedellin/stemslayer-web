@@ -60,7 +60,7 @@ export function DropZone({ onFilesChosen }: DropZoneProps) {
         <span className="drop-zone-icon" aria-hidden="true">↑</span>
         <p className="drop-zone-title">Drop one audio file or browse</p>
         <p className="drop-zone-constraints">
-          WAV or MP3 · one file at a time · max 100 MiB and 5 minutes.
+          WAV or MP3 · one file at a time · max 100 MiB.
           Performance and memory use vary by device; these limits do not guarantee compatibility.
         </p>
       </div>

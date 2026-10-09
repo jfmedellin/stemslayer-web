@@ -16,9 +16,8 @@ import type { ModelStorePort } from './ports/model-store-port'
 import type { QuotaPort } from './ports/quota-port'
 
 // docs/decisions/browser-storage.md section 2: 44,100 samples/s * 4 bytes
-// (float32) * 2 channels * 60 s/min * 5 min, per stem, for a worst-case
-// 5-minute-song forecast (duration is unknown before decoding).
-const STEM_BYTES_PER_LANE_FIVE_MINUTES = 105_840_000
+// (float32) * 2 channels, per stem lane.
+const STEM_BYTES_PER_SECOND_PER_LANE = 352_800
 
 export class AddToLibraryError extends Error {
   constructor(readonly code: string) {
@@ -31,6 +30,7 @@ export interface AddToLibraryInput {
   readonly bytes: Uint8Array
   readonly fileName: string
   readonly profile: StemProfile
+  readonly durationSeconds: number
 }
 
 export interface AddToLibraryDeps {
@@ -55,8 +55,8 @@ function titleFromFileName(fileName: string): string {
   return withoutExtension.length > 0 ? withoutExtension : fileName
 }
 
-function stemSetForecastBytes(profile: StemProfile): number {
-  return profile.lanes.length * STEM_BYTES_PER_LANE_FIVE_MINUTES
+function stemSetForecastBytes(profile: StemProfile, durationSeconds: number): number {
+  return Math.ceil(profile.lanes.length * STEM_BYTES_PER_SECOND_PER_LANE * durationSeconds)
 }
 
 export async function addToLibrary(
@@ -68,7 +68,7 @@ export async function addToLibrary(
   const identity: TrackIdentity = { sourceHash, pipelineFingerprint }
 
   const footprint = await deps.modelStore.getFootprint(input.profile.profileId)
-  const forecastBytes = stemSetForecastBytes(input.profile)
+  const forecastBytes = stemSetForecastBytes(input.profile, input.durationSeconds)
     + (footprint.cached ? 0 : footprint.sizeBytes)
   const availableBytes = await deps.quota.availableBytes()
   if (availableBytes < forecastBytes) {
@@ -83,7 +83,7 @@ export async function addToLibrary(
       title: titleFromFileName(input.fileName),
       artist: 'Unknown artist',
       genre: null,
-      durationSeconds: 0,
+      durationSeconds: input.durationSeconds,
       bpm: null,
       musicalKey: null,
       createdAtUtc: deps.now(),
@@ -113,7 +113,7 @@ export async function addToLibrary(
     }
 
     const preparing = transitionTrack(owner, 'preparing')
-    const adopted = updateTrackMetadata(preparing, { errorDetail: null })
+    const adopted = updateTrackMetadata(preparing, { errorDetail: null, durationSeconds: input.durationSeconds })
     await deps.catalog.update(adopted)
     return Object.freeze({ decision: 'adopted', track: adopted })
   })

@@ -43,7 +43,7 @@ test('two racing adds of the same bytes claim exactly once through the real Web 
   }
 
   const bytes = new TextEncoder().encode('same audio bytes, twice')
-  const input = { bytes, fileName: 'song.wav', profile: BASIC_PROFILE }
+  const input = { bytes, fileName: 'song.wav', profile: BASIC_PROFILE, durationSeconds: 60 }
 
   const [first, second] = await Promise.all([
     addToLibrary(input, deps),

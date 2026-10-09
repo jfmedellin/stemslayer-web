@@ -1,50 +1,28 @@
 import { parseAudioFileFormat, type AudioFileFormat } from './parse-audio-file-format'
 import { parseWavBitDepth } from './parse-wav-bit-depth'
+export { MAX_SOURCE_BYTES } from '../audio-file-limits'
+const WAV_HEADER_READ_BYTES = 64 * 1024
 
 export interface AudioFileMetadata {
   readonly fileName: string
   readonly format: AudioFileFormat
   /** `null` for every format without a fixed PCM bit depth to read (i.e. anything but WAV). */
   readonly bitDepth: number | null
-  /** `null` when duration decoding fails; the file card shows a dash rather than crashing. */
-  readonly durationSeconds: number | null
+  /** Duration measured by the bounded MP3/WAV decoder before reading the source bytes. */
+  readonly durationSeconds: number
   readonly sizeBytes: number
 }
 
-export type DecodeDurationSeconds = (bytes: Uint8Array) => Promise<number>
-
-/**
- * Real, browser-only duration decode: a short-lived `AudioContext` used only
- * to read `buffer.duration`, independent of `WebAudioInferenceDecoder`
- * (which forces a 44.1 kHz stereo resample for inference and rejects other
- * channel layouts — the display duration must not inherit that contract).
- */
-export async function defaultDecodeDurationSeconds(bytes: Uint8Array): Promise<number> {
-  const context = new AudioContext()
-  try {
-    const arrayBuffer = bytes.buffer.slice(bytes.byteOffset, bytes.byteOffset + bytes.byteLength) as ArrayBuffer
-    const buffer = await context.decodeAudioData(arrayBuffer)
-    return buffer.duration
-  } finally {
-    await context.close()
-  }
-}
-
-/** Combines the file-name-derived format, a WAV-only bit-depth read, size, and an injected duration decode. */
+/** Combines measured duration with file metadata; WAV headers are read with a fixed upper bound. */
 export async function readAudioFileMetadata(
   fileName: string,
-  bytes: Uint8Array,
-  decodeDurationSeconds: DecodeDurationSeconds = defaultDecodeDurationSeconds,
+  source: Blob,
+  durationSeconds: number,
 ): Promise<AudioFileMetadata> {
   const format = parseAudioFileFormat(fileName)
-  const bitDepth = format === 'WAV' ? parseWavBitDepth(bytes) : null
-
-  let durationSeconds: number | null
-  try {
-    durationSeconds = await decodeDurationSeconds(bytes)
-  } catch {
-    durationSeconds = null
-  }
-
-  return Object.freeze({ fileName, format, bitDepth, durationSeconds, sizeBytes: bytes.byteLength })
+  const headerBytes = format === 'WAV'
+    ? new Uint8Array(await source.slice(0, WAV_HEADER_READ_BYTES).arrayBuffer())
+    : null
+  const bitDepth = headerBytes === null ? null : parseWavBitDepth(headerBytes)
+  return Object.freeze({ fileName, format, bitDepth, durationSeconds, sizeBytes: source.size })
 }

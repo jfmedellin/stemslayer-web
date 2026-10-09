@@ -1,4 +1,4 @@
-import { expect, test } from 'vitest'
+import { expect, test, vi } from 'vitest'
 import { BASIC_PROFILE, ROCK_PROFILE } from '../../src/domain/stem-profile'
 import { detectEngineProvider } from '../../src/ui/upload/detect-engine-provider'
 import { estimateSeparationSeconds } from '../../src/ui/upload/estimate-seconds'
@@ -60,23 +60,27 @@ test('parseWavBitDepth reads bitsPerSample from the fmt chunk, null for non-WAV 
   expect(parseWavBitDepth(new TextEncoder().encode('not a wav file at all'))).toBeNull()
 })
 
-test('readAudioFileMetadata combines format/bit-depth/size with an injected duration decoder', async () => {
+test('readAudioFileMetadata combines bounded WAV header metadata with measured duration', async () => {
   const wavBytes = buildMinimalWavHeader(16)
-  const metadata = await readAudioFileMetadata('song.wav', wavBytes, async () => 4.5)
+  const file = new Blob([Uint8Array.from(wavBytes).buffer])
+  const slice = vi.spyOn(file, 'slice')
+  const metadata = await readAudioFileMetadata('song.wav', file, 4.5)
+  expect(slice).toHaveBeenCalledWith(0, 65_536)
   expect(metadata).toEqual({
     fileName: 'song.wav',
     format: 'WAV',
     bitDepth: 16,
     durationSeconds: 4.5,
-    sizeBytes: wavBytes.byteLength,
+    sizeBytes: file.size,
   })
 })
 
-test('readAudioFileMetadata reports a null duration when decoding fails, without throwing', async () => {
-  const metadata = await readAudioFileMetadata('song.mp3', new Uint8Array([1, 2, 3]), async () => {
-    throw new Error('decode failed')
-  })
-  expect(metadata.durationSeconds).toBeNull()
+test('readAudioFileMetadata does not read audio bytes to determine MP3 duration', async () => {
+  const file = new Blob([new Uint8Array([1, 2, 3])])
+  const slice = vi.spyOn(file, 'slice')
+  const metadata = await readAudioFileMetadata('song.mp3', file, 615)
+  expect(slice).not.toHaveBeenCalled()
+  expect(metadata.durationSeconds).toBe(615)
   expect(metadata.bitDepth).toBeNull()
   expect(metadata.format).toBe('MP3')
 })

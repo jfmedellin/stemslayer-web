@@ -4,6 +4,7 @@ import type { ModelFootprint } from '../../application/ports/model-store-port'
 import type { SeparationQueue } from '../../application/separation-queue'
 import { BASIC_PROFILE, ROCK_PROFILE, type StemProfile } from '../../domain/stem-profile'
 import type { NavigatorGpuLike } from '../../infrastructure/onnx-worker/onnx-session-manager'
+import { StreamingAudioDecoder } from '../../infrastructure/onnx-worker/streaming-audio-decoder'
 import { formatBytes } from '../format/format-bytes'
 import { BeforeYouStartStrip } from './BeforeYouStartStrip'
 import { detectEngineProvider } from './detect-engine-provider'
@@ -13,6 +14,7 @@ import { FileCard } from './FileCard'
 import { primaryActionLabel } from './primary-action-label'
 import { ProfileCard } from './ProfileCard'
 import { parseAudioFileFormat } from './parse-audio-file-format'
+import { MAX_SOURCE_BYTES } from '../audio-file-limits'
 import { readAudioFileMetadata, type AudioFileMetadata } from './read-audio-file-metadata'
 
 export interface UploadPageProps {
@@ -36,8 +38,6 @@ type SubmissionState =
   | { readonly kind: 'failed'; readonly message: string }
 
 const EXTRA_FILES_MESSAGE = 'Only the first file was loaded — Stemslayer separates one file at a time.'
-const MAX_SOURCE_BYTES = 100 * 1024 * 1024
-const MAX_DURATION_SECONDS = 5 * 60
 
 function successCopyForDecision(decision: 'claimed' | 'reused' | 'awaiting' | 'adopted'): string {
   switch (decision) {
@@ -109,26 +109,28 @@ export function UploadPage({ deps, navigatorRef, queue }: UploadPageProps) {
       return
     }
 
+    let durationSeconds: number
     try {
+      durationSeconds = await new StreamingAudioDecoder().measureDuration(file, format)
+    } catch {
+      reject('This audio file could not be decoded. Choose a valid, non-empty audio file.')
+      return
+    }
+    if (version !== selectionVersion.current) return
+    if (!Number.isFinite(durationSeconds) || durationSeconds <= 0) {
+      reject('This audio file could not be decoded. Choose a valid, non-empty audio file.')
+      return
+    }
+
+    try {
+      const metadata = await readAudioFileMetadata(file.name, file, durationSeconds)
+      if (version !== selectionVersion.current) return
       const bytes = new Uint8Array(await file.arrayBuffer())
       if (version !== selectionVersion.current) return
       if (bytes.byteLength === 0) {
         reject('This audio file is empty.')
         return
       }
-
-      const metadata = await readAudioFileMetadata(file.name, bytes)
-      if (version !== selectionVersion.current) return
-      const durationSeconds = metadata.durationSeconds
-      if (durationSeconds === null || !Number.isFinite(durationSeconds) || durationSeconds <= 0) {
-        reject('This audio file could not be decoded. Choose a valid, non-empty audio file.')
-        return
-      }
-      if (durationSeconds > MAX_DURATION_SECONDS) {
-        reject('Audio files must be no longer than 5 minutes.')
-        return
-      }
-
       setLoaded({ fileName: file.name, bytes, metadata })
     } catch {
       reject('This audio file could not be read. Choose a valid audio file and try again.')
@@ -148,7 +150,12 @@ export function UploadPage({ deps, navigatorRef, queue }: UploadPageProps) {
 
     let result: AddToLibraryResult
     try {
-      result = await addToLibrary({ bytes: loaded.bytes, fileName: loaded.fileName, profile }, deps)
+      result = await addToLibrary({
+        bytes: loaded.bytes,
+        fileName: loaded.fileName,
+        profile,
+        durationSeconds: loaded.metadata.durationSeconds,
+      }, deps)
     } catch (error) {
       setSubmission({ kind: 'failed', message: error instanceof Error ? error.message : String(error) })
       return
