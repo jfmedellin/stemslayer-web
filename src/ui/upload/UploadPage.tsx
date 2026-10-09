@@ -95,8 +95,9 @@ export function UploadPage({ deps, navigatorRef, queue }: UploadPageProps) {
       if (version === selectionVersion.current) setRejectionMessage(message)
     }
 
-    if (parseAudioFileFormat(file.name) === 'UNKNOWN') {
-      reject('Choose a supported audio format: WAV, MP3, FLAC, OGG, or M4A.')
+    const format = parseAudioFileFormat(file.name)
+    if (format !== 'WAV' && format !== 'MP3') {
+      reject('Choose a supported audio format: WAV or MP3.')
       return
     }
     if (file.size === 0) {

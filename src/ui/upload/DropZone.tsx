@@ -4,7 +4,7 @@ export interface DropZoneProps {
   readonly onFilesChosen: (files: readonly File[]) => void
 }
 
-const ACCEPTED_EXTENSIONS = '.wav,.mp3,.flac,.ogg,.m4a'
+const ACCEPTED_EXTENSIONS = '.wav,.mp3'
 
 /** Single-file drop zone with a native `<input type="file">` browse fallback. */
 export function DropZone({ onFilesChosen }: DropZoneProps) {
@@ -60,7 +60,7 @@ export function DropZone({ onFilesChosen }: DropZoneProps) {
         <span className="drop-zone-icon" aria-hidden="true">↑</span>
         <p className="drop-zone-title">Drop one audio file or browse</p>
         <p className="drop-zone-constraints">
-          WAV, MP3, FLAC, OGG, M4A · one file at a time · max 100 MiB and 5 minutes.
+          WAV or MP3 · one file at a time · max 100 MiB and 5 minutes.
           Performance and memory use vary by device; these limits do not guarantee compatibility.
         </p>
       </div>

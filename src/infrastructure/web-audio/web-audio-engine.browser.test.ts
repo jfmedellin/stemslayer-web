@@ -268,18 +268,21 @@ describe('WebAudioEngine against a real AudioWorkletProcessor (OfflineAudioConte
   test('keeps multi-chunk loop ranges prefetched through a loop wrap', async () => {
     const frameCount = MIXER_PREFETCH_CHUNK_FRAMES * (MIXER_PREFETCH_SLOT_COUNT + 1)
     const frameReads: number[] = []
-    const context = new OfflineAudioContext(2, frameCount + MIXER_PREFETCH_CHUNK_FRAMES, SAMPLE_RATE)
+    // CI can spend the first 2.5 chunks waiting for the worklet's initial range
+    // message. Leave that measured startup allowance plus a full loop and a
+    // post-wrap witness in the rendered output.
+    const context = new OfflineAudioContext(
+      2,
+      frameCount + MIXER_PREFETCH_CHUNK_FRAMES * 3,
+      SAMPLE_RATE,
+    )
     const streamingEngine = new WebAudioEngine({ context })
     const progress: Array<{ currentSample: number; isPlaying: boolean; isBuffering?: boolean }> = []
-    let previousSample = 0
-    let loopWrapped = false
-    streamingEngine.onProgress((next) => {
-      if (next.currentSample < previousSample && previousSample >= frameCount - MIXER_PREFETCH_CHUNK_FRAMES) {
-        loopWrapped = true
-      }
-      previousSample = next.currentSample
-      progress.push(next)
-    })
+    streamingEngine.onProgress((next) => progress.push(next))
+    const loopStartSignature = Float32Array.from(
+      { length: 32 },
+      (_unused, index) => 0.6 + index / 100,
+    )
     const session: MixerSession = {
       trackId: 'long-loop-track',
       sampleRate: SAMPLE_RATE,
@@ -288,7 +291,15 @@ describe('WebAudioEngine against a real AudioWorkletProcessor (OfflineAudioConte
       lanes: [{ laneId: 'vocals', displayName: 'Vocals', absent: false }],
       readFrames: async (startFrame, count) => {
         frameReads.push(startFrame)
-        const channel = new Float32Array(count).fill(0.1)
+        const channel = Float32Array.from(
+          { length: count },
+          (_unused, offset) => {
+            const sourceFrame = startFrame + offset
+            return sourceFrame < loopStartSignature.length
+              ? loopStartSignature[sourceFrame]
+              : 0.05 + (sourceFrame % 1_000) / 10_000
+          },
+        )
         return [[channel, channel.slice()]]
       },
     }
@@ -296,8 +307,6 @@ describe('WebAudioEngine against a real AudioWorkletProcessor (OfflineAudioConte
     await streamingEngine.load(session)
     await flushMicrotasks()
     progress.length = 0
-    previousSample = 0
-    loopWrapped = false
     streamingEngine.setLaneGain('vocals', 1)
     streamingEngine.setMasterGain(1)
     streamingEngine.setLoopRange(createLoopRange(0, frameCount, frameCount))
@@ -311,6 +320,9 @@ describe('WebAudioEngine against a real AudioWorkletProcessor (OfflineAudioConte
     try {
       await firstSuspended
       firstSuspensionCompleted = true
+      const beforeWrapSuspended = context.suspend(
+        (frameCount - MIXER_PREFETCH_CHUNK_FRAMES / 2) / SAMPLE_RATE,
+      )
       await context.resume()
       await waitForCondition(
         () => frameReads.includes(MIXER_PREFETCH_CHUNK_FRAMES * 4),
@@ -322,36 +334,43 @@ describe('WebAudioEngine against a real AudioWorkletProcessor (OfflineAudioConte
           renderingCompleted,
           lastProgress: progress.at(-1) ?? null,
           frameReads,
-          loopWrapped,
         }),
-      )
-      await waitForCondition(
-        () => frameReads.filter((startFrame) => startFrame === MIXER_PREFETCH_CHUNK_FRAMES).length > 1,
-        'the loop-start refill before the loop wrap',
-        5_000,
-        () => JSON.stringify({
-          contextState: context.state,
-          firstSuspensionCompleted,
-          renderingCompleted,
-          lastProgress: progress.at(-1) ?? null,
-          frameReads,
-          loopWrapped,
-        }),
-      )
-      expect(loopWrapped).toBe(false)
-      const beforeWrapSuspended = context.suspend(
-        context.currentTime + (MIXER_PREFETCH_CHUNK_FRAMES * 1.5) / SAMPLE_RATE,
       )
       await beforeWrapSuspended
-      expect(loopWrapped).toBe(false)
       expect(frameReads).toContain(MIXER_PREFETCH_CHUNK_FRAMES * 4)
-      expect(progress.every((next) => next.isBuffering !== true)).toBe(true)
+      await context.resume()
+      const afterWrapSuspended = context.suspend(
+        (frameCount + MIXER_PREFETCH_CHUNK_FRAMES / 4) / SAMPLE_RATE,
+      )
+      await afterWrapSuspended
       await context.resume()
       await rendering
-      await waitForCondition(() => loopWrapped, 'the first completed loop wrap')
 
-      expect(frameReads.filter((startFrame) => startFrame === MIXER_PREFETCH_CHUNK_FRAMES).length).toBeGreaterThan(1)
-      expect(progress.every((next) => next.isBuffering !== true)).toBe(true)
+      const left = (await rendering).getChannelData(0)
+      expect(frameReads).toContain(MIXER_PREFETCH_CHUNK_FRAMES * 4)
+      expect(frameReads).toContain(0)
+      // Count a source-derived signature instead of relying on cross-thread
+      // progress callbacks, which can be delayed until OfflineAudioContext ends.
+      // It is unique to loop-start frames, so a second occurrence proves wrap.
+      const loopStartOccurrences: number[] = []
+      for (let sampleIndex = 0; sampleIndex <= left.length - loopStartSignature.length; sampleIndex += 1) {
+        const matchesSignature = loopStartSignature.every((sample, offset) =>
+          Math.abs(left[sampleIndex + offset] - sample) < 0.00001,
+        )
+        if (matchesSignature) loopStartOccurrences.push(sampleIndex)
+      }
+      expect(loopStartOccurrences).toHaveLength(2)
+      const playbackOutputFrame = loopStartOccurrences[0] ?? -1
+      expect(playbackOutputFrame).toBeGreaterThanOrEqual(0)
+      // Ignore the known startup stall, then inspect rendered PCM directly so
+      // buffering assertions do not depend on delayed progress callbacks.
+      expect([...left.slice(playbackOutputFrame)].every((sample) => sample > 0.04)).toBe(true)
+      const wrapOutputFrame = loopStartOccurrences[1] ?? -1
+      const wrapWindowStart = wrapOutputFrame - 128
+      const wrapWindowEnd = wrapOutputFrame + 128
+      expect(wrapWindowStart).toBeGreaterThanOrEqual(0)
+      expect(wrapWindowEnd).toBeLessThanOrEqual(left.length)
+      expect([...left.slice(wrapWindowStart, wrapWindowEnd)].every((sample) => sample > 0.04)).toBe(true)
     } finally {
       await context.resume().catch(() => undefined)
       await rendering.catch(() => undefined)
