@@ -311,6 +311,9 @@ describe('WebAudioEngine against a real AudioWorkletProcessor (OfflineAudioConte
     try {
       await firstSuspended
       firstSuspensionCompleted = true
+      const beforeWrapSuspended = context.suspend(
+        (frameCount - MIXER_PREFETCH_CHUNK_FRAMES / 2) / SAMPLE_RATE,
+      )
       await context.resume()
       await waitForCondition(
         () => frameReads.includes(MIXER_PREFETCH_CHUNK_FRAMES * 4),
@@ -339,9 +342,6 @@ describe('WebAudioEngine against a real AudioWorkletProcessor (OfflineAudioConte
         }),
       )
       expect(loopWrapped).toBe(false)
-      const beforeWrapSuspended = context.suspend(
-        context.currentTime + (MIXER_PREFETCH_CHUNK_FRAMES * 1.5) / SAMPLE_RATE,
-      )
       await beforeWrapSuspended
       expect(loopWrapped).toBe(false)
       expect(frameReads).toContain(MIXER_PREFETCH_CHUNK_FRAMES * 4)
