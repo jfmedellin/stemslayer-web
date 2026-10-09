@@ -103,6 +103,45 @@ test('incremental lane writer emits byte-identical WAV and finalizes only after 
   )
 })
 
+test('incremental lane writer patches the WAV header with the exact frame count at EOF', async () => {
+  const store = newStore()
+  const left = Float32Array.from([0.125, -0.25, 0.375])
+  const right = Float32Array.from([-0.5, 0.625, -0.75])
+  const writer = await store.beginLaneWrite('stems/unknown-length', 'vocals', 44_100)
+
+  await writer.writeChunk([left.subarray(0, 1), right.subarray(0, 1)])
+  await writer.writeChunk([left.subarray(1), right.subarray(1)])
+  await writer.finalize()
+
+  const actual = await store.readLane('stems/unknown-length', 'vocals')
+  expect(actual).toEqual(encodeFloat32Wav({ sampleRate: 44_100, planar: [left, right] }))
+  expect(new DataView(actual.buffer, actual.byteOffset, actual.byteLength).getUint32(40, true)).toBe(3 * 8)
+})
+
+test('unknown-length writer aborts and removes its partial lane when final header patching fails', async () => {
+  let aborted = false
+  let removed = false
+  const store = newStore({
+    createWritable: async () => ({
+      write: async (chunk: unknown) => {
+        if (typeof chunk === 'object' && chunk !== null && 'type' in chunk) {
+          throw new Error('mock header patch failure')
+        }
+      },
+      close: async () => undefined,
+      abort: async () => { aborted = true },
+    } as unknown as FileSystemWritableFileStream),
+    removeEntry: async () => { removed = true },
+  })
+  const writer = await store.beginLaneWrite('stems/failed-patch', 'vocals', 44_100)
+  await writer.writeChunk([Float32Array.from([0.1]), Float32Array.from([0.2])])
+
+  await expect(writer.finalize()).rejects.toThrow('mock header patch failure')
+
+  expect(aborted).toBe(true)
+  expect(removed).toBe(true)
+})
+
 test('reads validated WAV metadata and exact aligned frame ranges without returning the whole lane', async () => {
   const store = newStore()
   const left = Float32Array.from([0.1, -0.2, 0.3, -0.4, 0.5])

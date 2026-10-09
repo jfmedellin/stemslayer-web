@@ -16,7 +16,8 @@ export interface SeparationQueueDeps {
 
 interface PendingJob {
   readonly trackId: string
-  readonly source: Uint8Array
+  readonly source: Blob | Uint8Array
+  readonly sourceFormat?: 'MP3' | 'WAV'
 }
 
 /**
@@ -39,8 +40,8 @@ export class SeparationQueue {
     this.deps = deps
   }
 
-  enqueue(trackId: string, source: Uint8Array): void {
-    this.pending.push({ trackId, source })
+  enqueue(trackId: string, source: Blob | Uint8Array, sourceFormat?: 'MP3' | 'WAV'): void {
+    this.pending.push({ trackId, source, sourceFormat })
     this.pump()
   }
 
@@ -82,7 +83,7 @@ export class SeparationQueue {
       modelStore: this.deps.modelStore,
       inference: this.deps.inference,
       onProgress: (event) => this.deps.onProgress?.(next.trackId, event),
-    })
+    }, next.sourceFormat)
     this.running = { trackId: next.trackId, handle }
     void handle.result.finally(() => {
       this.running = undefined

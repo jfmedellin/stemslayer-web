@@ -1,6 +1,6 @@
 import { resolveStemProfile } from '../../application/resolve-stem-profile'
 import { BASIC_PROFILE, ROCK_PROFILE } from '../../domain/stem-profile'
-import { BASIC_STEM_LANES, runBasicInferenceStreaming } from './basic-inference'
+import { BASIC_STEM_LANES, runBasicInferenceInputStreaming, runBasicInferenceStreaming } from './basic-inference'
 import { OnnxSessionManager } from './onnx-session-manager'
 import {
   isWorkerAckMessage,
@@ -10,8 +10,9 @@ import {
   type WorkerOutboundMessage,
   type WorkerChunkMessage,
 } from './protocol'
-import { ROCK_STEM_LANES, runRockInferenceStreaming } from './rock-inference'
+import { ROCK_STEM_LANES, runRockInferenceInputStreaming, runRockInferenceStreaming } from './rock-inference'
 import { assembleStemLaneChunks, type NamedRawStem } from './stem-lane-assembler'
+import { StreamingAudioDecoder } from './streaming-audio-decoder'
 
 interface WorkerScope {
   onmessage: ((event: MessageEvent<unknown>) => void) | null
@@ -43,11 +44,11 @@ function namedRawStems(names: readonly string[], stems: readonly (readonly Float
 let pendingAck: { readonly trackId: string; readonly resultKey: string; readonly chunkIndex: number; readonly resolve: () => void } | undefined
 
 async function execute(message: WorkerJobMessage): Promise<void> {
-  if (message.sampleRate !== 44_100) throw new Error(`onnx-worker.unsupported_sample_rate:${message.sampleRate}`)
+  if (message.sampleRate !== undefined && message.sampleRate !== 44_100) throw new Error(`onnx-worker.unsupported_sample_rate:${message.sampleRate}`)
 
   const profile = resolveStemProfile(message.profileId)
   const { session } = await new OnnxSessionManager().createSession(message.modelBytes)
-  const frameCount = message.planarChannels[0].length
+  let frameCount = message.planarChannels?.[0].length
   let lastWindow = 0
   let totalWindows: number | undefined
   let chunkIndex = 0
@@ -62,8 +63,8 @@ async function execute(message: WorkerJobMessage): Promise<void> {
       kind: 'chunk',
       trackId: message.trackId,
       resultKey: message.resultKey,
-      sampleRate: message.sampleRate,
-      frameCount,
+      sampleRate: message.sampleRate ?? 44_100,
+      frameCount: frameCount ?? null,
       chunkIndex: currentIndex,
       offset,
       lanes,
@@ -91,21 +92,37 @@ async function execute(message: WorkerJobMessage): Promise<void> {
   }
 
   try {
-    if (profile.profileId === BASIC_PROFILE.profileId) {
-      await runBasicInferenceStreaming(session, message.planarChannels, (chunk) => streamChunk(chunk.offset, chunk.stems), onProgress)
-    } else if (profile.profileId === ROCK_PROFILE.profileId) {
-      await runRockInferenceStreaming(session, message.planarChannels, (chunk) => streamChunk(chunk.offset, chunk.stems), onProgress)
+    if (message.source instanceof Blob) {
+      if (message.sourceFormat !== 'MP3' && message.sourceFormat !== 'WAV') {
+        throw new Error('onnx-worker.unsupported_streaming_format')
+      }
+      const pcm = new StreamingAudioDecoder().decode(message.source, message.sourceFormat)
+      const streamed = profile.profileId === BASIC_PROFILE.profileId
+        ? await runBasicInferenceInputStreaming(session, pcm, (chunk) => streamChunk(chunk.offset, chunk.stems))
+        : profile.profileId === ROCK_PROFILE.profileId
+          ? await runRockInferenceInputStreaming(session, pcm, (chunk) => streamChunk(chunk.offset, chunk.stems))
+          : (() => { throw new Error(`onnx-worker.unsupported_profile:${profile.profileId}`) })()
+      frameCount = streamed.frameCount
+    } else if (message.planarChannels !== undefined && message.sampleRate === 44_100) {
+      if (profile.profileId === BASIC_PROFILE.profileId) {
+        await runBasicInferenceStreaming(session, message.planarChannels, (chunk) => streamChunk(chunk.offset, chunk.stems), onProgress)
+      } else if (profile.profileId === ROCK_PROFILE.profileId) {
+        await runRockInferenceStreaming(session, message.planarChannels, (chunk) => streamChunk(chunk.offset, chunk.stems), onProgress)
+      } else {
+        throw new Error(`onnx-worker.unsupported_profile:${profile.profileId}`)
+      }
     } else {
-      throw new Error(`onnx-worker.unsupported_profile:${profile.profileId}`)
+      throw new Error('onnx-worker.invalid_audio_source')
     }
   } finally {
     await session.release()
   }
+  if (frameCount === undefined) throw new Error('onnx-worker.empty_audio')
   scope.postMessage({
     kind: 'complete',
     trackId: message.trackId,
     resultKey: message.resultKey,
-    sampleRate: message.sampleRate,
+    sampleRate: message.sampleRate ?? 44_100,
     frameCount,
     lanes: profile.lanes.map(({ laneId }) => laneId),
   })

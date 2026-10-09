@@ -85,7 +85,12 @@ describe('OnnxWorkerInference with the real module Worker', () => {
     }
     const inference = await adapter(streamingStore)
 
-    const keys = await inference.run(job('streamed-real-worker', INPUT_GAIN, BASIC_PROFILE, frameCount), () => undefined).result
+    const input = job('streamed-real-worker', INPUT_GAIN, BASIC_PROFILE, frameCount)
+    const keys = await inference.run({
+      ...input,
+      source: new Blob([sourceWav(INPUT_GAIN, frameCount).slice().buffer as ArrayBuffer]),
+      sourceFormat: 'WAV',
+    }, () => undefined).result
 
     expect(keys).toEqual(BASIC_PROFILE.lanes.map(({ laneId }) => `streamed-real-worker/${laneId}`))
     expect(begins).toBe(BASIC_PROFILE.lanes.length)
@@ -117,7 +122,12 @@ describe('OnnxWorkerInference with the real module Worker', () => {
       listResultKeys: () => stemStore.listResultKeys(),
     }
     const inference = await adapter(streamingStore, ROCK_PROFILE)
-    const keys = await inference.run(job('rock-stream', INPUT_GAIN, ROCK_PROFILE), () => undefined).result
+    const input = job('rock-stream', INPUT_GAIN, ROCK_PROFILE)
+    const keys = await inference.run({
+      ...input,
+      source: new Blob([sourceWav().slice().buffer as ArrayBuffer]),
+      sourceFormat: 'WAV',
+    }, () => undefined).result
 
     expect(keys).toEqual(ROCK_PROFILE.lanes.map(({ laneId }) => `rock-stream/${laneId}`))
     expect(begun).toBe(ROCK_PROFILE.lanes.length)

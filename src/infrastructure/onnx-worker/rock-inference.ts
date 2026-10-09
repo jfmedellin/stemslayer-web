@@ -5,6 +5,7 @@ import {
   MODEL_SEGMENT_SAMPLES,
   processPlanarWindows,
   processPlanarWindowsStreaming,
+  processPlanarWindowStream,
   type FinalizedWindowChunk,
   type PlanarWindowProcessor,
   type WindowProgress,
@@ -198,4 +199,31 @@ export async function runRockInferenceStreaming(
     throw new Error('rock-inference.no_windows_processed No window was run through the session.')
   }
   return Object.freeze({ stemCount, channelsPerStem })
+}
+
+export async function runRockInferenceInputStreaming(
+  session: ort.InferenceSession,
+  planarMix: AsyncIterable<readonly [Float32Array, Float32Array]>,
+  onChunk: (chunk: RockInferenceChunk) => void | Promise<void>,
+  signal?: AbortSignal,
+): Promise<RockInferenceShape & Readonly<{ frameCount: number }>> {
+  let stemCount: number | undefined
+  let channelsPerStem: number | undefined
+  const processor = createFlattenedRockProcessor(session, (count, channels) => {
+    stemCount = count
+    channelsPerStem = channels
+  })
+  const streamed = await processPlanarWindowStream(planarMix, processor, async ({ offset, channels }) => {
+    if (stemCount === undefined || channelsPerStem === undefined) {
+      throw new Error('rock-inference.no_windows_processed No window was run through the session.')
+    }
+    const stems: RockStemWaveform[] = Array.from({ length: stemCount }, (_, stem) => Object.freeze([
+      channels[stem * channelsPerStem!], channels[stem * channelsPerStem! + 1],
+    ]))
+    await onChunk({ offset, channels, stemCount, channelsPerStem, stems: Object.freeze(stems) })
+  }, { signal })
+  if (stemCount === undefined || channelsPerStem === undefined) {
+    throw new Error('rock-inference.no_windows_processed No window was run through the session.')
+  }
+  return Object.freeze({ stemCount, channelsPerStem, frameCount: streamed.frameCount })
 }

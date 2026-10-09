@@ -5,7 +5,7 @@ import type { ModelFootprint, ModelStorePort } from '../../../src/application/po
 import type { StemStorePort } from '../../../src/application/ports/stem-store-port'
 import { BASIC_PROFILE } from '../../../src/domain/stem-profile'
 import { OnnxWorkerInference } from '../../../src/infrastructure/onnx-worker/onnx-worker-inference'
-import type { WorkerChunkMessage, WorkerJobMessage } from '../../../src/infrastructure/onnx-worker/protocol'
+import type { WorkerChunkMessage, WorkerCompleteMessage, WorkerJobMessage } from '../../../src/infrastructure/onnx-worker/protocol'
 
 interface FakeWorker {
   postMessage(message: WorkerJobMessage, transfer: Transferable[]): void
@@ -46,6 +46,66 @@ function chunkMessage(job: InferenceJob): WorkerChunkMessage {
 }
 
 describe('OnnxWorkerInference against a fully injected fake Worker', () => {
+  test('streams Blob sources through the worker and starts OPFS writers without guessing a frame count', async () => {
+    const file = new Blob([Uint8Array.from([1, 2, 3])], { type: 'audio/wav' })
+    let posted: WorkerJobMessage | undefined
+    let writerFrameCount: number | undefined = 0
+    let finalized = 0
+    let chunkWritten = 0
+    const fakeWorker: FakeWorker = {
+      postMessage: (message) => { posted = message },
+      terminate: () => undefined,
+      onmessage: null,
+      onerror: null,
+    }
+    const stemStore: StemStorePort = {
+      beginLaneWrite: async (_key, _lane, _rate, frames) => {
+        writerFrameCount = frames
+        return {
+          writeChunk: async () => { chunkWritten += 1 },
+          finalize: async () => { finalized += 1 },
+          abort: async () => undefined,
+        }
+      },
+      writeLane: async () => undefined,
+      readLane: async () => { throw new Error('unused') },
+      delete: async () => undefined,
+      exists: async () => false,
+      listResultKeys: async () => [],
+    }
+    const inference = new OnnxWorkerInference({
+      modelStore,
+      stemStore,
+      decoder: { decode: async () => { throw new Error('whole_track_decoder_used') } },
+      createWorker: () => fakeWorker,
+    })
+    const theJob = { ...job('blob-stream'), source: file, sourceFormat: 'WAV' as const }
+    const handle = inference.run(theJob, () => undefined)
+    await new Promise<void>((resolve) => {
+      const check = () => (fakeWorker.onmessage ? resolve() : setTimeout(check, 0))
+      check()
+    })
+    expect(posted?.source).toBe(file)
+    expect(posted?.sourceFormat).toBe('WAV')
+    expect(posted?.planarChannels).toBeUndefined()
+    const base = { trackId: theJob.trackId, resultKey: theJob.resultKey }
+    fakeWorker.onmessage?.({ data: {
+      kind: 'chunk', ...base, sampleRate: 44_100, frameCount: null, chunkIndex: 0, offset: 0,
+      lanes: theJob.profile.lanes.map(({ laneId }) => ({
+        laneId, channels: [new Float32Array([0.25]), new Float32Array([-0.25])],
+      })),
+    } } as MessageEvent<unknown>)
+    await new Promise<void>((resolve) => setTimeout(resolve, 0))
+    expect(writerFrameCount).toBeUndefined()
+    expect(chunkWritten).toBe(theJob.profile.lanes.length)
+    fakeWorker.onmessage?.({ data: {
+      kind: 'complete', ...base, sampleRate: 44_100, frameCount: 1,
+      lanes: theJob.profile.lanes.map(({ laneId }) => laneId),
+    } satisfies WorkerCompleteMessage } as MessageEvent<unknown>)
+    await expect(handle.result).resolves.toEqual(theJob.profile.lanes.map(({ laneId }) => `blob-stream/${laneId}`))
+    expect(finalized).toBe(theJob.profile.lanes.length)
+  })
+
   test('a generic Worker failure while a lane write is in-flight waits for the write before deleting the result', async () => {
     const order: string[] = []
     let releaseWrite: (() => void) | undefined

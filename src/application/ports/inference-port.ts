@@ -12,7 +12,8 @@ import type { StemProfile } from '../../domain/stem-profile'
 export interface InferenceJob {
   readonly trackId: string
   readonly profile: StemProfile
-  readonly source: Uint8Array
+  readonly source: Blob | Uint8Array
+  readonly sourceFormat?: 'MP3' | 'WAV'
   readonly resultKey: string
 }
 
