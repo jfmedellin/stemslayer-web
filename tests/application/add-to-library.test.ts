@@ -26,7 +26,7 @@ function makeDeps(overrides: Partial<AddToLibraryDeps> = {}): AddToLibraryDeps {
 }
 
 async function seedReadyTrack(deps: AddToLibraryDeps, bytes: Uint8Array, profile = BASIC_PROFILE): Promise<Track> {
-  const result = await addToLibrary({ bytes, fileName: 'song.wav', profile }, deps)
+  const result = await addToLibrary({ bytes, fileName: 'song.wav', profile, durationSeconds: 60 }, deps)
   if (result.decision !== 'claimed') throw new Error(`expected claimed, got ${result.decision}`)
   const ready = transitionTrack(transitionTrack(result.track, 'processing'), 'ready')
   await deps.catalog.update(ready)
@@ -38,7 +38,7 @@ describe('addToLibrary', () => {
     const deps = makeDeps()
 
     const result = await addToLibrary(
-      { bytes: new Uint8Array([1, 2, 3]), fileName: 'my-song.wav', profile: BASIC_PROFILE },
+      { bytes: new Uint8Array([1, 2, 3]), fileName: 'my-song.wav', profile: BASIC_PROFILE, durationSeconds: 60 },
       deps,
     )
 
@@ -49,6 +49,7 @@ describe('addToLibrary', () => {
       title: 'my-song',
       artist: 'Unknown artist',
       profileId: BASIC_PROFILE.profileId,
+      durationSeconds: 60,
     })
     expect(result.track.sourceHash).toBeDefined()
     await expect(deps.catalog.listAll()).resolves.toEqual([result.track])
@@ -59,7 +60,7 @@ describe('addToLibrary', () => {
     const bytes = new Uint8Array([9, 9, 9])
     const ready = await seedReadyTrack(deps, bytes)
 
-    const result = await addToLibrary({ bytes, fileName: 'song.wav', profile: BASIC_PROFILE }, deps)
+    const result = await addToLibrary({ bytes, fileName: 'song.wav', profile: BASIC_PROFILE, durationSeconds: 60 }, deps)
 
     expect(result).toEqual({ decision: 'reused', track: ready })
     await expect(deps.catalog.listAll()).resolves.toEqual([ready])
@@ -70,7 +71,7 @@ describe('addToLibrary', () => {
     const bytes = new Uint8Array([5, 5, 5])
     await seedReadyTrack(deps, bytes, BASIC_PROFILE)
 
-    const result = await addToLibrary({ bytes, fileName: 'song.wav', profile: ROCK_PROFILE }, deps)
+    const result = await addToLibrary({ bytes, fileName: 'song.wav', profile: ROCK_PROFILE, durationSeconds: 60 }, deps)
 
     expect(result.decision).toBe('claimed')
     await expect(deps.catalog.listAll()).resolves.toHaveLength(2)
@@ -81,7 +82,7 @@ describe('addToLibrary', () => {
     const original = await seedReadyTrack(deps, new Uint8Array([1, 1, 1]))
 
     const result = await addToLibrary(
-      { bytes: new Uint8Array([2, 2, 2]), fileName: 'song.wav', profile: BASIC_PROFILE },
+      { bytes: new Uint8Array([2, 2, 2]), fileName: 'song.wav', profile: BASIC_PROFILE, durationSeconds: 60 },
       deps,
     )
 
@@ -102,12 +103,12 @@ describe('addToLibrary', () => {
     // (retry-track.ts), which takes the freshly supplied bytes explicitly.
     const deps = makeDeps()
     const bytes = new Uint8Array([7, 7, 7])
-    const claim = await addToLibrary({ bytes, fileName: 'song.wav', profile: BASIC_PROFILE }, deps)
+    const claim = await addToLibrary({ bytes, fileName: 'song.wav', profile: BASIC_PROFILE, durationSeconds: 60 }, deps)
     if (claim.decision !== 'claimed') throw new Error('setup failed')
     const failed = transitionTrack(transitionTrack(claim.track, 'processing'), 'failed')
     await deps.catalog.update({ ...failed, errorDetail: 'inference.failed Retry from the original audio.' })
 
-    const adoption = await addToLibrary({ bytes, fileName: 'song.wav', profile: BASIC_PROFILE }, deps)
+    const adoption = await addToLibrary({ bytes, fileName: 'song.wav', profile: BASIC_PROFILE, durationSeconds: 180 }, deps)
 
     expect(adoption.decision).toBe('adopted')
     if (adoption.decision !== 'adopted') return
@@ -115,13 +116,14 @@ describe('addToLibrary', () => {
     expect(adoption.track.status).toBe('preparing')
     expect(adoption.track.errorDetail).toBeNull()
     expect(adoption.track.sourceHash).toBe(failed.sourceHash)
+    expect(adoption.track.durationSeconds).toBe(180)
     await expect(deps.catalog.listAll()).resolves.toEqual([adoption.track])
   })
 
   test('changed bytes leave a stale failed identity untouched and independent', async () => {
     const deps = makeDeps()
     const claim = await addToLibrary(
-      { bytes: new Uint8Array([1, 1, 1]), fileName: 'song.wav', profile: BASIC_PROFILE },
+      { bytes: new Uint8Array([1, 1, 1]), fileName: 'song.wav', profile: BASIC_PROFILE, durationSeconds: 60 },
       deps,
     )
     if (claim.decision !== 'claimed') throw new Error('setup failed')
@@ -129,7 +131,7 @@ describe('addToLibrary', () => {
     await deps.catalog.update(failed)
 
     const result = await addToLibrary(
-      { bytes: new Uint8Array([2, 2, 2]), fileName: 'song.wav', profile: BASIC_PROFILE },
+      { bytes: new Uint8Array([2, 2, 2]), fileName: 'song.wav', profile: BASIC_PROFILE, durationSeconds: 60 },
       deps,
     )
 
@@ -142,10 +144,10 @@ describe('addToLibrary', () => {
   test('a preparing/processing owner is awaited without creating anything new', async () => {
     const deps = makeDeps()
     const bytes = new Uint8Array([3, 3, 3])
-    const claim = await addToLibrary({ bytes, fileName: 'song.wav', profile: BASIC_PROFILE }, deps)
+    const claim = await addToLibrary({ bytes, fileName: 'song.wav', profile: BASIC_PROFILE, durationSeconds: 60 }, deps)
     if (claim.decision !== 'claimed') throw new Error('setup failed')
 
-    const result = await addToLibrary({ bytes, fileName: 'song.wav', profile: BASIC_PROFILE }, deps)
+    const result = await addToLibrary({ bytes, fileName: 'song.wav', profile: BASIC_PROFILE, durationSeconds: 60 }, deps)
 
     expect(result).toEqual({ decision: 'awaiting', track: claim.track })
     await expect(deps.catalog.listAll()).resolves.toEqual([claim.track])
@@ -155,7 +157,7 @@ describe('addToLibrary', () => {
     const deps = makeDeps({ quota: new FakeQuota(1) })
 
     const result = await addToLibrary(
-      { bytes: new Uint8Array([1, 2, 3]), fileName: 'song.wav', profile: BASIC_PROFILE },
+      { bytes: new Uint8Array([1, 2, 3]), fileName: 'song.wav', profile: BASIC_PROFILE, durationSeconds: 60 },
       deps,
     )
 
@@ -168,20 +170,23 @@ describe('addToLibrary', () => {
 
   test('quota forecast adds the model footprint only when uncached', async () => {
     const modelStore = new InMemoryModelStore()
-    const stemForecast = BASIC_PROFILE.lanes.length * 105_840_000
+    const durationSeconds = 120
+    const stemForecast = durationSeconds * 352_800 * BASIC_PROFILE.lanes.length
     const availableBytes = stemForecast + 500
     const uncachedModelBytes = 1_000
 
     modelStore.setFootprint(BASIC_PROFILE.profileId, { cached: false, sizeBytes: uncachedModelBytes })
     const withUncachedModel = await addToLibrary(
-      { bytes: new Uint8Array([1]), fileName: 'song.wav', profile: BASIC_PROFILE },
+      { bytes: new Uint8Array([1]), fileName: 'song.wav', profile: BASIC_PROFILE, durationSeconds },
       makeDeps({ modelStore, quota: new FakeQuota(availableBytes) }),
     )
     expect(withUncachedModel.decision).toBe('quota-refused')
+    if (withUncachedModel.decision !== 'quota-refused') return
+    expect(withUncachedModel.forecastBytes).toBe(stemForecast + uncachedModelBytes)
 
     modelStore.setFootprint(BASIC_PROFILE.profileId, { cached: true, sizeBytes: uncachedModelBytes })
     const withCachedModel = await addToLibrary(
-      { bytes: new Uint8Array([1]), fileName: 'song.wav', profile: BASIC_PROFILE },
+      { bytes: new Uint8Array([1]), fileName: 'song.wav', profile: BASIC_PROFILE, durationSeconds },
       makeDeps({ modelStore, quota: new FakeQuota(availableBytes) }),
     )
     expect(withCachedModel.decision).toBe('claimed')
@@ -192,8 +197,8 @@ describe('addToLibrary', () => {
     const bytes = new Uint8Array([4, 4, 4])
 
     const [first, second] = await Promise.all([
-      addToLibrary({ bytes, fileName: 'song.wav', profile: BASIC_PROFILE }, deps),
-      addToLibrary({ bytes, fileName: 'song.wav', profile: BASIC_PROFILE }, deps),
+      addToLibrary({ bytes, fileName: 'song.wav', profile: BASIC_PROFILE, durationSeconds: 60 }, deps),
+      addToLibrary({ bytes, fileName: 'song.wav', profile: BASIC_PROFILE, durationSeconds: 60 }, deps),
     ])
 
     const decisions = [first.decision, second.decision].sort()

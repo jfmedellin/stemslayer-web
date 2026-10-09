@@ -54,9 +54,8 @@ npm run build
   preferred when available, with a WASM fallback that may be slower.
 - The model download and stored stems require substantial browser storage.
   Separation may be refused when available quota is insufficient.
-- Upload and retry accept WAV and MP3 only. Source files remain limited to 100 MiB
-  and five minutes; storage, browser support, and device performance may impose
-  additional limits.
+- Upload and retry accept WAV and MP3 only. Source files remain limited to 100 MiB;
+  storage, browser support, and device performance may impose additional limits.
 - Browser storage is not a backup. It may be cleared manually or evicted; Safari
   may delete site data after seven days without a visit. Download stems you want
   to keep. Retrying a failed or interrupted track may require selecting the

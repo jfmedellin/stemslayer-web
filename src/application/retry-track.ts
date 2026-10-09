@@ -19,6 +19,7 @@ export interface RetryTrackDeps {
 
 export interface RetryTrackInput {
   readonly bytes?: Uint8Array
+  readonly durationSeconds?: number
 }
 
 export type RetryTrackResult =
@@ -28,8 +29,11 @@ export type RetryTrackResult =
 
 const retryableStatuses = new Set<TrackStatus>(['failed', 'interrupted', 'unavailable'])
 
-function retryInPlace(track: Track): Track {
-  return updateTrackMetadata(transitionTrack(track, 'preparing'), { errorDetail: null })
+function retryInPlace(track: Track, durationSeconds?: number): Track {
+  return updateTrackMetadata(transitionTrack(track, 'preparing'), {
+    errorDetail: null,
+    ...(durationSeconds === undefined ? {} : { durationSeconds }),
+  })
 }
 
 /**
@@ -60,14 +64,14 @@ export async function retryTrack(
   }
 
   if (input?.bytes === undefined) {
-    const retried = retryInPlace(track)
+    const retried = retryInPlace(track, input?.durationSeconds)
     await deps.catalog.update(retried)
     return Object.freeze({ ok: true, track: retried })
   }
 
   const newHash = await deps.hash.sha256(input.bytes)
   if (newHash === track.sourceHash) {
-    const retried = retryInPlace(track)
+    const retried = retryInPlace(track, input.durationSeconds)
     await deps.catalog.update(retried)
     return Object.freeze({ ok: true, track: retried })
   }
@@ -83,7 +87,7 @@ export async function retryTrack(
     }
 
     const rebound = rebindTrackSourceHashForRetry(track, newHash)
-    const retried = retryInPlace(rebound)
+    const retried = retryInPlace(rebound, input.durationSeconds)
     await deps.catalog.update(retried)
     return Object.freeze({ ok: true, track: retried })
   })

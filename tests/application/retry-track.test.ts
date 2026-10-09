@@ -96,11 +96,11 @@ describe('retryTrack', () => {
       const newBytes = new Uint8Array([3, 3, 3])
       const newHash = await deps.hash.sha256(newBytes)
 
-      const result = await retryTrack(track.trackId, deps, { bytes: newBytes })
+      const result = await retryTrack(track.trackId, deps, { bytes: newBytes, durationSeconds: 615 })
 
       expect(result).toEqual({
         ok: true,
-        track: { ...track, status: 'preparing', errorDetail: null, sourceHash: newHash },
+        track: { ...track, status: 'preparing', errorDetail: null, sourceHash: newHash, durationSeconds: 615 },
       })
       await expect(deps.catalog.getById(track.trackId)).resolves.toEqual(result.ok ? result.track : undefined)
     })
@@ -175,7 +175,7 @@ describe('retryTrack', () => {
         now: () => '2026-09-21T13:00:00.000Z',
       }
       const result = await addToLibrary(
-        { bytes: oldBytes, fileName: 'song.wav', profile: BASIC_PROFILE },
+        { bytes: oldBytes, fileName: 'song.wav', profile: BASIC_PROFILE, durationSeconds: 60 },
         addDeps,
       )
 

@@ -6,6 +6,8 @@ import type { StemStorePort } from '../../application/ports/stem-store-port'
 import { removeTrack } from '../../application/remove-track'
 import { retryTrack } from '../../application/retry-track'
 import type { SeparateProgressEvent } from '../../application/separate'
+import { StreamingAudioDecoder } from '../../infrastructure/onnx-worker/streaming-audio-decoder'
+import { MAX_SOURCE_BYTES } from '../audio-file-limits'
 import type { SeparationQueue } from '../../application/separation-queue'
 import type { Track } from '../../domain/track'
 import type { StartupSweepGuard } from '../app-dependencies'
@@ -120,9 +122,39 @@ export function LibraryPage({
       setRowError(trackId, 'Choose a WAV or MP3 file to retry this track.')
       return
     }
+    if (file.size === 0) {
+      setRowError(trackId, 'This audio file is empty.')
+      return
+    }
+    if (file.size > MAX_SOURCE_BYTES) {
+      setRowError(trackId, 'Audio files must be no larger than 100 MiB.')
+      return
+    }
 
-    const bytes = new Uint8Array(await file.arrayBuffer())
-    const result = await retryTrack(trackId, deps, { bytes })
+    let durationSeconds: number
+    try {
+      durationSeconds = await new StreamingAudioDecoder().measureDuration(file, format)
+    } catch {
+      setRowError(trackId, 'This audio file could not be decoded. Choose a valid, non-empty audio file.')
+      return
+    }
+    if (!Number.isFinite(durationSeconds) || durationSeconds <= 0) {
+      setRowError(trackId, 'This audio file could not be decoded. Choose a valid, non-empty audio file.')
+      return
+    }
+
+    let bytes: Uint8Array
+    try {
+      bytes = new Uint8Array(await file.arrayBuffer())
+    } catch {
+      setRowError(trackId, 'This audio file could not be read. Choose a valid audio file and try again.')
+      return
+    }
+    if (bytes.byteLength === 0) {
+      setRowError(trackId, 'This audio file is empty.')
+      return
+    }
+    const result = await retryTrack(trackId, deps, { bytes, durationSeconds })
 
     if (result.ok) {
       setRetryPromptTrackId(null)
