@@ -328,6 +328,12 @@ describe('WebAudioEngine against a real AudioWorkletProcessor (OfflineAudioConte
           loopWrapped,
         }),
       )
+      expect(loopWrapped).toBe(false)
+      await beforeWrapSuspended
+      expect(loopWrapped).toBe(false)
+      expect(frameReads).toContain(MIXER_PREFETCH_CHUNK_FRAMES * 4)
+      expect(progress.every((next) => next.isBuffering !== true)).toBe(true)
+      await context.resume()
       await waitForCondition(
         () => frameReads.filter((startFrame) => startFrame === MIXER_PREFETCH_CHUNK_FRAMES).length > 1,
         'the loop-start refill before the loop wrap',
@@ -342,11 +348,6 @@ describe('WebAudioEngine against a real AudioWorkletProcessor (OfflineAudioConte
         }),
       )
       expect(loopWrapped).toBe(false)
-      await beforeWrapSuspended
-      expect(loopWrapped).toBe(false)
-      expect(frameReads).toContain(MIXER_PREFETCH_CHUNK_FRAMES * 4)
-      expect(progress.every((next) => next.isBuffering !== true)).toBe(true)
-      await context.resume()
       await rendering
       await waitForCondition(() => loopWrapped, 'the first completed loop wrap')
 
