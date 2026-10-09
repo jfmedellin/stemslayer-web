@@ -288,7 +288,10 @@ describe('WebAudioEngine against a real AudioWorkletProcessor (OfflineAudioConte
       lanes: [{ laneId: 'vocals', displayName: 'Vocals', absent: false }],
       readFrames: async (startFrame, count) => {
         frameReads.push(startFrame)
-        const channel = new Float32Array(count).fill(0.1)
+        const channel = Float32Array.from(
+          { length: count },
+          (_unused, offset) => 0.05 + ((startFrame + offset) % 1_000) / 10_000,
+        )
         return [[channel, channel.slice()]]
       },
     }
@@ -337,26 +340,18 @@ describe('WebAudioEngine against a real AudioWorkletProcessor (OfflineAudioConte
       const afterWrapSuspended = context.suspend(
         (frameCount + MIXER_PREFETCH_CHUNK_FRAMES / 4) / SAMPLE_RATE,
       )
-      await waitForCondition(
-        () => frameReads.filter((startFrame) => startFrame === MIXER_PREFETCH_CHUNK_FRAMES).length > 1,
-        'the loop-start refill before the loop wrap',
-        5_000,
-        () => JSON.stringify({
-          contextState: context.state,
-          firstSuspensionCompleted,
-          renderingCompleted,
-          lastProgress: progress.at(-1) ?? null,
-          frameReads,
-          loopWrapped,
-        }),
-      )
-      expect(loopWrapped).toBe(false)
       await afterWrapSuspended
-      await waitForCondition(() => loopWrapped, 'the first completed loop wrap')
       await context.resume()
       await rendering
 
-      expect(frameReads.filter((startFrame) => startFrame === MIXER_PREFETCH_CHUNK_FRAMES).length).toBeGreaterThan(1)
+      const left = (await rendering).getChannelData(0)
+      const wrapWindowStart = frameCount - 128
+      const wrapWindowEnd = frameCount + 128
+      expect(frameReads).toContain(MIXER_PREFETCH_CHUNK_FRAMES * 4)
+      expect(frameReads).toContain(0)
+      expect([...left.slice(wrapWindowStart, wrapWindowEnd)].every((sample) => sample > 0.04)).toBe(true)
+      expect([...left.slice(frameCount, frameCount + 128)]).toEqual([...left.slice(0, 128)])
+      expect(loopWrapped).toBe(true)
       expect(progress.every((next) => next.isBuffering !== true)).toBe(true)
     } finally {
       await context.resume().catch(() => undefined)
