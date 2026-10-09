@@ -161,9 +161,10 @@ export class OpfsStemStore implements StemStorePort {
     resultKey: string,
     laneId: string,
     sampleRate: number,
-    frameCount: number,
+    frameCount?: number,
   ): Promise<StemLaneWriteSession> {
-    if (!Number.isSafeInteger(sampleRate) || sampleRate <= 0 || !Number.isSafeInteger(frameCount) || frameCount <= 0) {
+    if (!Number.isSafeInteger(sampleRate) || sampleRate <= 0
+      || (frameCount !== undefined && (!Number.isSafeInteger(frameCount) || frameCount <= 0))) {
       throw new Error('opfs-stem-store.invalid_stream_shape')
     }
     const root = await this.root()
@@ -226,7 +227,7 @@ export class OpfsStemStore implements StemStorePort {
     }
     try {
       writable = await createWritable(fileHandle)
-      const header = createWavHeader(sampleRate, frameCount)
+      const header = createWavHeader(sampleRate, frameCount ?? 0)
       await writable.write(header.buffer as ArrayBuffer)
     } catch (error) {
       return failAndCleanup(error)
@@ -236,19 +237,29 @@ export class OpfsStemStore implements StemStorePort {
         if (state !== 'open' || cleanupPending) throw new Error('opfs-stem-store.stream_not_open')
         try {
           const bytes = encodeStereoChunk(planar)
-          if (framesWritten + planar[0].length > frameCount) throw new Error('opfs-stem-store.too_many_frames')
+          const nextFramesWritten = framesWritten + planar[0].length
+          if (frameCount !== undefined && nextFramesWritten > frameCount) {
+            throw new Error('opfs-stem-store.too_many_frames')
+          }
+          if (!Number.isSafeInteger(nextFramesWritten) || nextFramesWritten * 8 > 0xffff_ffff - 36) {
+            throw new Error('opfs-stem-store.wav_size_limit')
+          }
           await writable!.write(bytes.buffer as ArrayBuffer)
-          framesWritten += planar[0].length
+          framesWritten = nextFramesWritten
         } catch (error) {
           return failAndCleanup(error)
         }
       },
       finalize: async (): Promise<void> => {
         if (state !== 'open' || cleanupPending) throw new Error('opfs-stem-store.stream_not_open')
-        if (framesWritten !== frameCount) {
+        if (frameCount !== undefined && framesWritten !== frameCount) {
           return failAndCleanup(new Error(`opfs-stem-store.incomplete_stream:${framesWritten}:${frameCount}`))
         }
         try {
+          if (frameCount === undefined) {
+            const header = createWavHeader(sampleRate, framesWritten)
+            await writable!.write({ type: 'write', position: 0, data: toArrayBuffer(header) })
+          }
           await writable!.close()
           state = 'finalized'
         } catch (error) {

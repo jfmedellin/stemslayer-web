@@ -115,10 +115,11 @@ export class OnnxWorkerInference implements InferencePort {
       message.trackId === job.trackId && message.resultKey === job.resultKey
 
     const expectedIds = job.profile.lanes.map(({ laneId }) => laneId)
+    const streamingSource = job.source instanceof Blob && (job.sourceFormat === 'MP3' || job.sourceFormat === 'WAV')
     const persistChunk = async (message: WorkerChunkMessage): Promise<void> => {
       if (
         message.sampleRate !== 44_100
-        || message.frameCount !== expectedFrameCount
+        || (expectedFrameCount === undefined ? message.frameCount !== null : message.frameCount !== expectedFrameCount)
         || message.chunkIndex !== nextChunkIndex
         || message.offset !== nextOffset
         || JSON.stringify(message.lanes.map(({ laneId }) => laneId)) !== JSON.stringify(expectedIds)
@@ -127,7 +128,7 @@ export class OnnxWorkerInference implements InferencePort {
       if (laneWriters.size === 0) {
         for (const laneId of expectedIds) {
           laneWriters.set(laneId, await this.stemStore.beginLaneWrite(
-            job.resultKey, laneId, message.sampleRate, message.frameCount,
+            job.resultKey, laneId, message.sampleRate, message.frameCount ?? undefined,
           ))
         }
       }
@@ -151,7 +152,7 @@ export class OnnxWorkerInference implements InferencePort {
     const finalize = async (message: WorkerCompleteMessage): Promise<void> => {
       if (
         message.sampleRate !== 44_100
-        || message.frameCount !== expectedFrameCount
+        || (expectedFrameCount !== undefined && message.frameCount !== expectedFrameCount)
         || nextOffset !== message.frameCount
         || JSON.stringify(message.lanes) !== JSON.stringify(expectedIds)
         || laneWriters.size !== expectedIds.length
@@ -171,13 +172,19 @@ export class OnnxWorkerInference implements InferencePort {
 
     const start = async (): Promise<void> => {
       try {
+        if (job.source instanceof Blob && !streamingSource) throw workerFailure('unsupported_streaming_format')
         await this.modelStore.ensure(job.profile.profileId, () => undefined)
         if (cancelled) return
         const modelBytes = await this.modelStore.read(job.profile.profileId)
         if (cancelled) return
-        const decoded = await this.decoder.decode(job.source)
-        if (cancelled) return
-        expectedFrameCount = decoded.planarChannels[0].length
+        let decoded: DecodedInferenceAudio | undefined
+        if (job.source instanceof Blob) {
+          if (!streamingSource) throw workerFailure('unsupported_streaming_format')
+        } else {
+          decoded = await this.decoder.decode(job.source)
+          if (cancelled) return
+          expectedFrameCount = decoded.planarChannels[0].length
+        }
 
         worker = this.createWorker()
         worker.onerror = (event) => { void fail(workerFailure(event.message)) }
@@ -213,19 +220,18 @@ export class OnnxWorkerInference implements InferencePort {
           void persistence.catch((error: unknown) => { void fail(error) })
         }
 
-        const message: WorkerJobMessage = {
+        const common = {
           kind: 'job',
           trackId: job.trackId,
           resultKey: job.resultKey,
           profileId: job.profile.profileId,
-          sampleRate: decoded.sampleRate,
           modelBytes,
-          planarChannels: decoded.planarChannels,
-        }
-        const transfer: Transferable[] = [
-          modelBytes.buffer as ArrayBuffer,
-          ...decoded.planarChannels.map(({ buffer }) => buffer as ArrayBuffer),
-        ]
+        } as const
+        const message: WorkerJobMessage = streamingSource
+          ? { ...common, source: job.source as Blob, sourceFormat: job.sourceFormat! }
+          : { ...common, sampleRate: decoded!.sampleRate, planarChannels: decoded!.planarChannels }
+        const transfer: Transferable[] = [modelBytes.buffer as ArrayBuffer]
+        if (decoded !== undefined) transfer.push(...decoded.planarChannels.map(({ buffer }) => buffer as ArrayBuffer))
         worker.postMessage(message, transfer)
       } catch (error) {
         if (!cancelled) await fail(error)

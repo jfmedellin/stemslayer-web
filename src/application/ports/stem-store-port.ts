@@ -19,7 +19,7 @@ export interface StemStorePort {
     resultKey: string,
     laneId: string,
     sampleRate: number,
-    frameCount: number,
+    frameCount?: number,
   ): Promise<StemLaneWriteSession>
   /** Writes one lane's encoded bytes under a result key (`writeLane('stems/track-1', 'vocals', bytes)`). */
   writeLane(resultKey: string, laneId: string, audio: Uint8Array): Promise<void>

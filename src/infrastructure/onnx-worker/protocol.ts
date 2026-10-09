@@ -6,9 +6,11 @@ export interface WorkerJobMessage {
   readonly trackId: string
   readonly resultKey: string
   readonly profileId: string
-  readonly sampleRate: number
+  readonly source?: Blob
+  readonly sourceFormat?: 'MP3' | 'WAV'
+  readonly sampleRate?: number
   readonly modelBytes: Uint8Array
-  readonly planarChannels: readonly [Float32Array, Float32Array]
+  readonly planarChannels?: readonly [Float32Array, Float32Array]
 }
 
 export interface WorkerProgressMessage {
@@ -28,8 +30,8 @@ export interface WorkerChunkMessage {
   readonly kind: 'chunk'
   readonly trackId: string
   readonly resultKey: string
-  readonly sampleRate: number
-  readonly frameCount: number
+  readonly sampleRate?: number
+  readonly frameCount: number | null
   readonly chunkIndex: number
   readonly offset: number
   readonly lanes: readonly WorkerLaneChunkMessage[]
@@ -100,10 +102,16 @@ export function isWorkerJobMessage(value: unknown): value is WorkerJobMessage {
     && message.kind === 'job'
     && correlation(message)
     && nonEmptyString(message.profileId)
-    && positiveInteger(message.sampleRate)
     && message.modelBytes instanceof Uint8Array
     && message.modelBytes.byteLength > 0
-    && stereo(message.planarChannels)
+    && ((message.source instanceof Blob
+      && (message.sourceFormat === 'MP3' || message.sourceFormat === 'WAV')
+      && message.sampleRate === undefined
+      && message.planarChannels === undefined)
+      || (positiveInteger(message.sampleRate)
+        && stereo(message.planarChannels)
+        && message.source === undefined
+        && message.sourceFormat === undefined))
 }
 
 function isProgress(message: UnknownRecord): boolean {
@@ -133,7 +141,7 @@ function isChunk(message: UnknownRecord): boolean {
     message.kind !== 'chunk'
     || !correlation(message)
     || !positiveInteger(message.sampleRate)
-    || !positiveInteger(message.frameCount)
+    || !(message.frameCount === null || positiveInteger(message.frameCount))
     || !Number.isSafeInteger(message.chunkIndex)
     || (message.chunkIndex as number) < 0
     || !Number.isSafeInteger(message.offset)
@@ -146,7 +154,7 @@ function isChunk(message: UnknownRecord): boolean {
   const length = (message.lanes[0] as WorkerLaneChunkMessage).channels[0].length
   return length > 0
     && length <= MODEL_WINDOW_STRIDE
-    && (message.offset as number) + length <= (message.frameCount as number)
+    && (message.frameCount === null || (message.offset as number) + length <= (message.frameCount as number))
     && message.lanes.every((lane) => lane.channels[0].length === length)
     && new Set(ids).size === ids.length
 }

@@ -73,7 +73,7 @@ async function settleFailure(
  * immediately before the final commit"); once inference has started,
  * `terminate()` forwards to `InferenceHandle.terminate()`.
  */
-export function separate(trackId: string, source: Uint8Array, deps: SeparateDeps): SeparateHandle {
+export function separate(trackId: string, source: Blob | Uint8Array, deps: SeparateDeps, sourceFormat?: 'MP3' | 'WAV'): SeparateHandle {
   let terminated = false
   let inferenceHandle: InferenceHandle | undefined
 
@@ -106,7 +106,7 @@ export function separate(trackId: string, source: Uint8Array, deps: SeparateDeps
     await deps.catalog.update(processing)
 
     inferenceHandle = deps.inference.run(
-      { trackId, profile, source, resultKey: track.resultKey },
+      { trackId, profile, source, sourceFormat, resultKey: track.resultKey },
       (progress) => deps.onProgress?.({ phase: 'processing', ...progress }),
     )
     if (terminated) inferenceHandle.terminate()
